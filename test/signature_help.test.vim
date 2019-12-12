@@ -113,10 +113,11 @@ endfunction
 
 function! Test_Signatures_After_Trigger()
   call youcompleteme#test#setup#OpenFile(
-        \ '/third_party/ycmd/ycmd/tests/clangd/testdata/general_fallback'
-        \ . '/make_drink.cc' )
+        \ '/test/testdata/vim/mixed_filetype.vim',
+        \ { 'native_ft': 0 } )
 
-  call setpos( '.', [ 0, 7, 13 ] )
+  setf vim.python
+  call setpos( '.', [ 0, 3, 17 ] )
 
   " Required to trigger TextChangedI
   " https://github.com/vim/vim/issues/4665#event-2480928194
@@ -131,7 +132,7 @@ function! Test_Signatures_After_Trigger()
           \     pyxeval(
           \       'ycm_state.SignatureHelpRequestReady()'
           \     ),
-          \     'sig help request reqdy'
+          \     'sig help request ready'
           \   )
           \ } )
     call WaitForAssert( {->
@@ -139,7 +140,7 @@ function! Test_Signatures_After_Trigger()
           \     pyxeval(
           \       "bool( ycm_state.GetSignatureHelpResponse()[ 'signatures' ] )"
           \     ),
-          \     'sig help request reqdy'
+          \     'sig help request has signatures'
           \   )
           \ } )
     call WaitForAssert( {->
@@ -182,7 +183,7 @@ endfunction
 function! Test_Signatures_With_PUM_NoSigns()
   call youcompleteme#test#setup#OpenFile(
         \ '/third_party/ycmd/ycmd/tests/clangd/testdata/general_fallback'
-        \ . '/make_drink.cc' )
+        \ . '/make_drink.cc', {} )
 
   " Make sure that error signs don't shift the window
   setlocal signcolumn=no
@@ -255,7 +256,7 @@ endfunction
 function! Test_Signatures_With_PUM_Signs()
   call youcompleteme#test#setup#OpenFile(
         \ '/third_party/ycmd/ycmd/tests/clangd/testdata/general_fallback'
-        \ . '/make_drink.cc' )
+        \ . '/make_drink.cc', {} )
 
   " Make sure that sign causes the popup to shift
   setlocal signcolumn=auto
@@ -494,7 +495,7 @@ function! Test_Placement_MultiLine()
 endfunction
 
 function! Test_Signatures_TopLine()
-  call youcompleteme#test#setup#OpenFile( 'test/testdata/python/test.py' )
+  call youcompleteme#test#setup#OpenFile( 'test/testdata/python/test.py', {} )
   call setpos( '.', [ 0, 1, 24 ] )
   call test_override( 'char_avail', 1 )
 
@@ -513,7 +514,7 @@ function! Test_Signatures_TopLine()
 endfunction
 
 function! Test_Signatures_TopLineWithPUM()
-  call youcompleteme#test#setup#OpenFile( 'test/testdata/python/test.py' )
+  call youcompleteme#test#setup#OpenFile( 'test/testdata/python/test.py', {} )
   call setpos( '.', [ 0, 1, 24 ] )
   call test_override( 'char_avail', 1 )
 

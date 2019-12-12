@@ -5,6 +5,27 @@ YouCompleteMe: a code-completion engine for Vim
 [![Build status](https://dev.azure.com/YouCompleteMe/YCM/_apis/build/status/ycm-core.YouCompleteMe?branchName=master)](https://dev.azure.com/YouCompleteMe/YCM/_build?definitionId=3&branchName=master)
 [![Coverage status](https://img.shields.io/codecov/c/github/ycm-core/YouCompleteMe/master.svg)](https://codecov.io/gh/ycm-core/YouCompleteMe)
 
+Early Warning: Dropping support for Python 2 in 2020
+----
+
+In early 2020, YCM will drop support for Python 2. But we will maintain
+criticial fixes on a branch (name TBA) of YCM for a period of 1 year.
+
+Why?
+
+Over the past decade, YouCompleteMe has had an at times fractious, 
+but ultimately very successful relationship with Python 2. However, more
+recently it has been carrying on a simultaneous relationship with Python 3.
+Indeed all of YCM and ycmd code is Python 3 code, with a lot of gubbins
+to make it work also on Python 2. This makes the code more complex,
+requires double testing of everything, and restricts the developers from using
+certain new langauge features, ultimately restricting the features we can
+deliver to users.
+
+On 1st January 2020, Python 2 will be officially end of life. And therefore, so
+will its relationship with YouCompleteMe and ycmd.
+
+
 Help, Advice, Support
 ---------------------
 
@@ -811,6 +832,9 @@ Quick Feature Summary
 * View documentation comments for identifiers (`GetDoc`)
 * Type information for identifiers (`GetType`)
 * Automatically fix certain errors (`FixIt`)
+* Reference finding (`GoToReferences`)
+* Renaming symbols (`RefactorRename <new name>`)
+* Code formatting (`Format`)
 
 ### C♯
 
@@ -840,6 +864,7 @@ Quick Feature Summary
 * Go to declaration/definition (`GoTo`, etc.)
 * Go to type definition (`GoToType`)
 * Automatically fix certain errors (`FixIt`)
+* View documentation comments for identifiers (`GetDoc`)
 * Type information for identifiers (`GetType`)
 * Code formatting (`Format`)
 * Management of `gopls` server instance
@@ -847,6 +872,7 @@ Quick Feature Summary
 ### JavaScript and TypeScript
 
 * Semantic auto-completion with automatic import insertion
+* Signature help
 * Real-time diagnostic display
 * Go to definition (`GoTo`, `GoToDefinition`, and `GoToDeclaration` are
   identical)
@@ -1859,7 +1885,7 @@ This command attempts to find all of the references within the project to the
 identifier under the cursor and populates the quickfix list with those
 locations.
 
-Supported in filetypes: `java, javascript, python, typescript, rust`
+Supported in filetypes: `c, cpp, objc, objcpp, cuda, java, javascript, python, typescript, rust`
 
 #### The `GoToImplementation` subcommand
 
@@ -1961,7 +1987,7 @@ under the cursor. Depending on the file type, this includes things like:
 * Python docstrings,
 * etc.
 
-Supported in filetypes: `c, cpp, objc, objcpp, cuda, cs, java, javascript,
+Supported in filetypes: `c, cpp, objc, objcpp, cuda, cs, go, java, javascript,
 python, typescript, rust`
 
 #### The `GetDocImprecise` subcommand
@@ -2025,7 +2051,7 @@ files. Rename operations may involve changes to multiple files, which may or may
 not be open in Vim buffers at the time. YouCompleteMe handles all of this for
 you. The behavior is described in [the following section](#multi-file-refactor).
 
-Supported in filetypes: `java, javascript, typescript, rust`
+Supported in filetypes: `c, cpp, objc, objcpp, cuda, java, javascript, typescript, rust`
 
 #### Multi-file Refactor
 
@@ -2066,7 +2092,7 @@ it in one of Vim's visual modes (see `:h visual-use`) and run the command or
 directly enter the range on the command line, e.g. `:2,5YcmCompleter Format` to
 format it from line 2 to line 5.
 
-Supported in filetypes: `java, javascript, go, typescript, rust`
+Supported in filetypes: `c, cpp, objc, objcpp, cuda, java, javascript, go, typescript, rust`
 
 #### The `OrganizeImports` subcommand
 
@@ -2097,7 +2123,7 @@ The support for `ExecuteCommand` was implemented to support plugins like
 Restarts the semantic-engine-as-localhost-server for those semantic engines that
 work as separate servers that YCM talks to.
 
-Supported in filetypes: `cs, go, java, javascript, rust, typescript`
+Supported in filetypes: `c, cpp, objc, objcpp, cuda, cs, go, java, javascript, rust, typescript`
 
 #### The `ClearCompilationFlagCache` subcommand
 
@@ -2349,6 +2375,7 @@ let g:ycm_filetype_blacklist = {
       \ 'vimwiki': 1,
       \ 'pandoc': 1,
       \ 'infolog': 1,
+      \ 'leaderf': 1,
       \ 'mail': 1
       \}
 ```
