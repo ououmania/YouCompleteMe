@@ -64,7 +64,7 @@ def YouCompleteMe_InvalidPythonInterpreterPath_test( post_vim_message ):
       post_vim_message.assert_called_once_with(
         "Unable to start the ycmd server. "
         "Path in 'g:ycm_server_python_interpreter' option does not point "
-        "to a valid Python 3.5+. "
+        "to a valid Python 3.6+. "
         "Correct the error then restart the server with ':YcmRestartServer'." )
 
       post_vim_message.reset_mock()
@@ -91,7 +91,7 @@ def YouCompleteMe_NoPythonInterpreterFound_test( post_vim_message, *args ):
 
       assert_that( ycm.IsServerAlive(), equal_to( False ) )
       post_vim_message.assert_called_once_with(
-        "Unable to start the ycmd server. Cannot find Python 3.5+. "
+        "Unable to start the ycmd server. Cannot find Python 3.6+. "
         "Set the 'g:ycm_server_python_interpreter' option to a Python "
         "interpreter path. "
         "Correct the error then restart the server with ':YcmRestartServer'." )
@@ -229,20 +229,20 @@ def YouCompleteMe_DebugInfo_ServerNotRunning_test( ycm ):
 def YouCompleteMe_OnVimLeave_RemoveClientLogfileByDefault_test( ycm ):
   client_logfile = ycm._client_logfile
   assert_that( os.path.isfile( client_logfile ),
-               'Logfile {0} does not exist.'.format( client_logfile ) )
+               f'Logfile { client_logfile } does not exist.' )
   ycm.OnVimLeave()
   assert_that( not os.path.isfile( client_logfile ),
-               'Logfile {0} was not removed.'.format( client_logfile ) )
+               f'Logfile { client_logfile } was not removed.' )
 
 
 @YouCompleteMeInstance( { 'g:ycm_keep_logfiles': 1 } )
 def YouCompleteMe_OnVimLeave_KeepClientLogfile_test( ycm ):
   client_logfile = ycm._client_logfile
   assert_that( os.path.isfile( client_logfile ),
-               'Logfile {0} does not exist.'.format( client_logfile ) )
+               f'Logfile { client_logfile } does not exist.' )
   ycm.OnVimLeave()
   assert_that( os.path.isfile( client_logfile ),
-               'Logfile {0} was removed.'.format( client_logfile ) )
+               f'Logfile { client_logfile } was removed.' )
 
 
 @YouCompleteMeInstance()
@@ -253,16 +253,19 @@ def YouCompleteMe_ToggleLogs_WithParameters_test( open_filename,
                                                   ycm ):
   logfile_buffer = VimBuffer( ycm._client_logfile )
   with MockVimBuffers( [ logfile_buffer ], [ logfile_buffer ] ):
-    ycm.ToggleLogs( os.path.basename( ycm._client_logfile ),
+    ycm.ToggleLogs( 90,
+                    'botright vertical',
+                    os.path.basename( ycm._client_logfile ),
                     'nonexisting_logfile',
                     os.path.basename( ycm._server_stdout ) )
 
     open_filename.assert_has_exact_calls( [
-      call( ycm._server_stdout, { 'size': 12,
+      call( ycm._server_stdout, { 'size': 90,
                                   'watch': True,
                                   'fix': True,
                                   'focus': False,
-                                  'position': 'end' } )
+                                  'position': 'end',
+                                  'mods': 'botright vertical' } )
     ] )
     close_buffers_for_filename.assert_has_exact_calls( [
       call( ycm._client_logfile )
@@ -278,14 +281,15 @@ def YouCompleteMe_ToggleLogs_WithoutParameters_SelectLogfileNotAlreadyOpen_test(
 
   current_buffer = VimBuffer( 'current_buffer' )
   with MockVimBuffers( [ current_buffer ], [ current_buffer ] ):
-    ycm.ToggleLogs()
+    ycm.ToggleLogs( 0, '' )
 
   open_filename.assert_has_exact_calls( [
     call( ycm._server_stderr, { 'size': 12,
                                 'watch': True,
                                 'fix': True,
                                 'focus': False,
-                                'position': 'end' } )
+                                'position': 'end',
+                                'mods': '' } )
   ] )
 
 
@@ -298,7 +302,7 @@ def YouCompleteMe_ToggleLogs_WithoutParameters_SelectLogfileAlreadyOpen_test(
 
   logfile_buffer = VimBuffer( ycm._server_stdout )
   with MockVimBuffers( [ logfile_buffer ], [ logfile_buffer ] ):
-    ycm.ToggleLogs()
+    ycm.ToggleLogs( 0, '' )
 
   close_buffers_for_filename.assert_has_exact_calls( [
     call( ycm._server_stdout )
@@ -314,7 +318,7 @@ def YouCompleteMe_ToggleLogs_WithoutParameters_NoSelection_test(
 
   current_buffer = VimBuffer( 'current_buffer' )
   with MockVimBuffers( [ current_buffer ], [ current_buffer ] ):
-    ycm.ToggleLogs()
+    ycm.ToggleLogs( 0, '' )
 
   assert_that(
     # Argument passed to PostVimMessage.
@@ -676,8 +680,10 @@ def YouCompleteMe_UpdateDiagnosticInterface( ycm, post_vim_message, *args ):
 @patch( 'ycm.youcompleteme.YouCompleteMe.FiletypeCompleterExistsForFiletype',
         return_value = True )
 @patch( 'ycm.vimsupport.PostVimMessage', new_callable = ExtendedMock )
+@patch( 'ycm.client.event_notification.EventNotification.Done',
+        return_value = True )
 def YouCompleteMe_UpdateDiagnosticInterface_OldVim_test(
-    post_vim_message, filetype_completer_exists, ycm ):
+    request_done, post_vim_message, filetype_completer_exists, ycm ):
   YouCompleteMe_UpdateDiagnosticInterface( ycm, post_vim_message )
 
 
@@ -688,8 +694,10 @@ def YouCompleteMe_UpdateDiagnosticInterface_OldVim_test(
         return_value = True )
 @patch( 'ycm.vimsupport.PostVimMessage', new_callable = ExtendedMock )
 @patch( 'ycm.tests.test_utils.VIM_VERSION', Version( 8, 1, 614 ) )
+@patch( 'ycm.client.event_notification.EventNotification.Done',
+        return_value = True )
 def YouCompleteMe_UpdateDiagnosticInterface_NewVim_test(
-    post_vim_message, filetype_completer_exists, ycm ):
+    request_done, post_vim_message, filetype_completer_exists, ycm ):
   YouCompleteMe_UpdateDiagnosticInterface( ycm, post_vim_message )
 
 

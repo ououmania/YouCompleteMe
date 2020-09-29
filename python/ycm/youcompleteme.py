@@ -32,7 +32,7 @@ from ycm import syntax_parse
 from ycm.client.ycmd_keepalive import YcmdKeepalive
 from ycm.client.base_request import BaseRequest, BuildRequestData
 from ycm.client.completer_available_request import SendCompleterAvailableRequest
-from ycm.client.command_request import SendCommandRequest
+from ycm.client.command_request import SendCommandRequest, GetCommandResponse
 from ycm.client.completion_request import CompletionRequest
 from ycm.client.signature_help_request import ( SignatureHelpRequest,
                                                 SigHelpAvailableByFileType )
@@ -149,27 +149,26 @@ class YouCompleteMe:
       python_interpreter = paths.PathToPythonInterpreter()
     except RuntimeError as error:
       error_message = (
-        "Unable to start the ycmd server. {0}. "
+        f"Unable to start the ycmd server. { str( error ).rstrip( '.' ) }. "
         "Correct the error then restart the server "
-        "with ':YcmRestartServer'.".format( str( error ).rstrip( '.' ) ) )
+        "with ':YcmRestartServer'." )
       self._logger.exception( error_message )
       vimsupport.PostVimMessage( error_message )
       return
 
     args = [ python_interpreter,
              paths.PathToServerScript(),
-             '--port={0}'.format( server_port ),
-             '--options_file={0}'.format( options_file.name ),
-             '--log={0}'.format( self._user_options[ 'log_level' ] ),
-             '--idle_suicide_seconds={0}'.format(
-                SERVER_IDLE_SUICIDE_SECONDS ) ]
+             f'--port={ server_port }',
+             f'--options_file={ options_file.name }',
+             f'--log={ self._user_options[ "log_level" ] }',
+             f'--idle_suicide_seconds={ SERVER_IDLE_SUICIDE_SECONDS }' ]
 
     self._server_stdout = utils.CreateLogfile(
         SERVER_LOGFILE_FORMAT.format( port = server_port, std = 'stdout' ) )
     self._server_stderr = utils.CreateLogfile(
         SERVER_LOGFILE_FORMAT.format( port = server_port, std = 'stderr' ) )
-    args.append( '--stdout={0}'.format( self._server_stdout ) )
-    args.append( '--stderr={0}'.format( self._server_stderr ) )
+    args.append( f'--stdout={ self._server_stdout }' )
+    args.append( f'--stderr={ self._server_stderr }' )
 
     if self._user_options[ 'keep_logfiles' ]:
       args.append( '--keep_logfiles' )
@@ -214,7 +213,7 @@ class YouCompleteMe:
     log_level = self._user_options[ 'log_level' ]
     numeric_level = getattr( logging, log_level.upper(), None )
     if not isinstance( numeric_level, int ):
-      raise ValueError( 'Invalid log level: {0}'.format( log_level ) )
+      raise ValueError( f'Invalid log level: { log_level }' )
     self._logger.setLevel( numeric_level )
 
 
@@ -373,12 +372,11 @@ class YouCompleteMe:
       signature_info )
 
 
-  def SendCommandRequest( self,
-                          arguments,
-                          modifiers,
-                          has_range,
-                          start_line,
-                          end_line ):
+  def _GetCommandRequestArguments( self,
+                                   arguments,
+                                   has_range,
+                                   start_line,
+                                   end_line ):
     final_arguments = []
     for argument in arguments:
       # The ft= option which specifies the completer when running a command is
@@ -398,10 +396,35 @@ class YouCompleteMe:
       extra_data.update( vimsupport.BuildRange( start_line, end_line ) )
     self._AddExtraConfDataIfNeeded( extra_data )
 
+    return final_arguments, extra_data
+
+
+
+  def SendCommandRequest( self,
+                          arguments,
+                          modifiers,
+                          has_range,
+                          start_line,
+                          end_line ):
+    final_arguments, extra_data = self._GetCommandRequestArguments(
+      arguments,
+      has_range,
+      start_line,
+      end_line )
     return SendCommandRequest( final_arguments,
                                modifiers,
                                self._user_options[ 'goto_buffer_command' ],
                                extra_data )
+
+
+  def GetCommandResponse( self, arguments ):
+    final_arguments, extra_data = self._GetCommandRequestArguments(
+      arguments,
+      False,
+      0,
+      0 )
+    return GetCommandResponse( final_arguments, extra_data )
+
 
 
   def GetDefinedSubcommands( self ):
@@ -517,6 +540,10 @@ class YouCompleteMe:
     self._AddExtraConfDataIfNeeded( extra_data )
 
     self.CurrentBuffer().SendParseRequest( extra_data )
+
+
+  def OnFileSave( self, saved_buffer_number ):
+    SendEventNotificationAsync( 'FileSave', saved_buffer_number )
 
 
   def OnBufferUnload( self, deleted_buffer_number ):
@@ -638,19 +665,17 @@ class YouCompleteMe:
   def DebugInfo( self ):
     debug_info = ''
     if self._client_logfile:
-      debug_info += 'Client logfile: {0}\n'.format( self._client_logfile )
+      debug_info += f'Client logfile: { self._client_logfile }\n'
     extra_data = {}
     self._AddExtraConfDataIfNeeded( extra_data )
     debug_info += FormatDebugInfoResponse( SendDebugInfoRequest( extra_data ) )
-    debug_info += 'Server running at: {0}\n'.format(
-      BaseRequest.server_location )
+    debug_info += f'Server running at: { BaseRequest.server_location }\n'
     if self._server_popen:
-      debug_info += 'Server process ID: {0}\n'.format( self._server_popen.pid )
+      debug_info += f'Server process ID: { self._server_popen.pid }\n'
     if self._server_stdout and self._server_stderr:
       debug_info += ( 'Server logfiles:\n'
-                      '  {0}\n'
-                      '  {1}'.format( self._server_stdout,
-                                      self._server_stderr ) )
+                      f'  { self._server_stdout }\n'
+                      f'  { self._server_stderr }' )
     return debug_info
 
 
@@ -674,16 +699,20 @@ class YouCompleteMe:
     return logfiles
 
 
-  def _OpenLogfile( self, logfile ):
+  def _OpenLogfile( self, size, mods, logfile ):
     # Open log files in a horizontal window with the same behavior as the
     # preview window (same height and winfixheight enabled). Automatically
     # watch for changes. Set the cursor position at the end of the file.
+    if not size:
+      size = vimsupport.GetIntValue( '&previewheight' )
+
     options = {
-      'size': vimsupport.GetIntValue( '&previewheight' ),
+      'size': size,
       'fix': True,
       'focus': False,
       'watch': True,
-      'position': 'end'
+      'position': 'end',
+      'mods': mods
     }
 
     vimsupport.OpenFilename( logfile, options )
@@ -693,7 +722,7 @@ class YouCompleteMe:
     vimsupport.CloseBuffersForFilename( logfile )
 
 
-  def ToggleLogs( self, *filenames ):
+  def ToggleLogs( self, size, mods, *filenames ):
     logfiles = self.GetLogfiles()
     if not filenames:
       sorted_logfiles = sorted( logfiles )
@@ -707,7 +736,7 @@ class YouCompleteMe:
 
       logfile = logfiles[ sorted_logfiles[ logfile_index ] ]
       if not vimsupport.BufferIsVisibleForFilename( logfile ):
-        self._OpenLogfile( logfile )
+        self._OpenLogfile( size, mods, logfile )
       else:
         self._CloseLogfile( logfile )
       return
@@ -719,7 +748,7 @@ class YouCompleteMe:
       logfile = logfiles[ filename ]
 
       if not vimsupport.BufferIsVisibleForFilename( logfile ):
-        self._OpenLogfile( logfile )
+        self._OpenLogfile( size, mods, logfile )
         continue
 
       self._CloseLogfile( logfile )
@@ -794,8 +823,8 @@ class YouCompleteMe:
           extra_conf_data[ expr ] = vimsupport.VimExpressionToPythonType( expr )
         except vim.error:
           message = (
-            "Error evaluating '{expr}' in the 'g:ycm_extra_conf_vim_data' "
-            "option.".format( expr = expr ) )
+            f"Error evaluating '{ expr }' in the 'g:ycm_extra_conf_vim_data' "
+            "option." )
           vimsupport.PostVimMessage( message, truncate = True )
           self._logger.exception( message )
       return extra_conf_data

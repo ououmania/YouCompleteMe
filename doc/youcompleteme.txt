@@ -1,10 +1,10 @@
-*youcompleteme.txt*  youcompleteme
+*youcompleteme.txt*  YouCompleteMe: a code-completion engine for Vim
 
 ===============================================================================
 Contents ~
 
  1. Introduction                                   |youcompleteme-introduction|
- 2. Warning: Support for Python 2 has been dropped |youcompleteme-warning-support-for-python-2-has-been-dropped|
+ 2. Warning: Support for Python 3.5 has ended |youcompleteme-warning-support-for-python-3.5-has-ended|
  3. Help, Advice, Support                   |youcompleteme-help-advice-support|
  4. Contents                                           |youcompleteme-contents|
  5. Intro                                                 |youcompleteme-intro|
@@ -82,10 +82,11 @@ Contents ~
    3. The |GoToDefinition| subcommand
    4. The |GoTo| subcommand
    5. The |GoToImprecise| subcommand
-   6. The |GoToReferences| subcommand
-   7. The |GoToImplementation| subcommand
-   8. The |GoToImplementationElseDeclaration| subcommand
-   9. The |GoToType| subcommand
+   6. The 'GoToSymbol <symbol query>' subcommand      |GoToSymbol-symbol-query|
+   7. The |GoToReferences| subcommand
+   8. The |GoToImplementation| subcommand
+   9. The |GoToImplementationElseDeclaration| subcommand
+   10. The |GoToType| subcommand
   2. Semantic Information Commands |youcompleteme-semantic-information-commands|
    1. The |GetType| subcommand
    2. The |GetTypeImprecise| subcommand
@@ -105,6 +106,7 @@ Contents ~
  11. Functions                                        |youcompleteme-functions|
   1. The |youcompleteme#GetErrorCount| function
   2. The |youcompleteme#GetWarningCount| function
+  3. The 'youcompleteme#GetCommandResponse( ... )' function |youcompleteme#GetCommandResponse()|
  12. Autocommands                                  |youcompleteme-autocommands|
   1. The |YcmLocationOpened| autocommand
   2. The |YcmQuickFixOpened| autocommand
@@ -124,46 +126,52 @@ Contents ~
   13. The |g:ycm_enable_diagnostic_signs| option
   14. The |g:ycm_enable_diagnostic_highlighting| option
   15. The |g:ycm_echo_current_diagnostic| option
-  16. The |g:ycm_filter_diagnostics| option
-  17. The |g:ycm_always_populate_location_list| option
-  18. The |g:ycm_open_loclist_on_ycm_diags| option
-  19. The |g:ycm_complete_in_comments| option
-  20. The |g:ycm_complete_in_strings| option
-  21. The |g:ycm_collect_identifiers_from_comments_and_strings| option
-  22. The |g:ycm_collect_identifiers_from_tags_files| option
-  23. The |g:ycm_seed_identifiers_with_syntax| option
-  24. The |g:ycm_extra_conf_vim_data| option
-  25. The |g:ycm_server_python_interpreter| option
-  26. The |g:ycm_keep_logfiles| option
-  27. The |g:ycm_log_level| option
-  28. The |g:ycm_auto_start_csharp_server| option
-  29. The |g:ycm_auto_stop_csharp_server| option
-  30. The |g:ycm_csharp_server_port| option
-  31. The |g:ycm_csharp_insert_namespace_expr| option
-  32. The |g:ycm_add_preview_to_completeopt| option
-  33. The |g:ycm_autoclose_preview_window_after_completion| option
-  34. The |g:ycm_autoclose_preview_window_after_insertion| option
-  35. The |g:ycm_max_diagnostics_to_display| option
-  36. The |g:ycm_key_list_select_completion| option
-  37. The |g:ycm_key_list_previous_completion| option
-  38. The |g:ycm_key_list_stop_completion| option
-  39. The |g:ycm_key_invoke_completion| option
-  40. The |g:ycm_key_detailed_diagnostics| option
-  41. The |g:ycm_global_ycm_extra_conf| option
-  42. The |g:ycm_confirm_extra_conf| option
-  43. The |g:ycm_extra_conf_globlist| option
-  44. The |g:ycm_filepath_completion_use_working_dir| option
-  45. The |g:ycm_semantic_triggers| option
-  46. The |g:ycm_cache_omnifunc| option
-  47. The |g:ycm_use_ultisnips_completer| option
-  48. The |g:ycm_goto_buffer_command| option
-  49. The |g:ycm_disable_for_files_larger_than_kb| option
-  50. The |g:ycm_use_clangd| option
-  51. The |g:ycm_clangd_binary_path| option
-  52. The |g:ycm_clangd_args| option
-  53. The |g:ycm_clangd_uses_ycmd_caching| option
-  54. The |g:ycm_language_server| option
-  55. The |g:ycm_disable_signature_help| option
+  16. The |g:ycm_auto_hover| option
+  17. The |g:ycm_filter_diagnostics| option
+  18. The |g:ycm_always_populate_location_list| option
+  19. The |g:ycm_open_loclist_on_ycm_diags| option
+  20. The |g:ycm_complete_in_comments| option
+  21. The |g:ycm_complete_in_strings| option
+  22. The |g:ycm_collect_identifiers_from_comments_and_strings| option
+  23. The |g:ycm_collect_identifiers_from_tags_files| option
+  24. The |g:ycm_seed_identifiers_with_syntax| option
+  25. The |g:ycm_extra_conf_vim_data| option
+  26. The |g:ycm_server_python_interpreter| option
+  27. The |g:ycm_keep_logfiles| option
+  28. The |g:ycm_log_level| option
+  29. The |g:ycm_auto_start_csharp_server| option
+  30. The |g:ycm_auto_stop_csharp_server| option
+  31. The |g:ycm_csharp_server_port| option
+  32. The |g:ycm_csharp_insert_namespace_expr| option
+  33. The |g:ycm_add_preview_to_completeopt| option
+  34. The |g:ycm_autoclose_preview_window_after_completion| option
+  35. The |g:ycm_autoclose_preview_window_after_insertion| option
+  36. The |g:ycm_max_diagnostics_to_display| option
+  37. The |g:ycm_key_list_select_completion| option
+  38. The |g:ycm_key_list_previous_completion| option
+  39. The |g:ycm_key_list_stop_completion| option
+  40. The |g:ycm_key_invoke_completion| option
+  41. The |g:ycm_key_detailed_diagnostics| option
+  42. The |g:ycm_global_ycm_extra_conf| option
+  43. The |g:ycm_confirm_extra_conf| option
+  44. The |g:ycm_extra_conf_globlist| option
+  45. The |g:ycm_filepath_completion_use_working_dir| option
+  46. The |g:ycm_semantic_triggers| option
+  47. The |g:ycm_cache_omnifunc| option
+  48. The |g:ycm_use_ultisnips_completer| option
+  49. The |g:ycm_goto_buffer_command| option
+  50. The |g:ycm_disable_for_files_larger_than_kb| option
+  51. The |g:ycm_use_clangd| option
+  52. The |g:ycm_clangd_binary_path| option
+  53. The |g:ycm_clangd_args| option
+  54. The |g:ycm_clangd_uses_ycmd_caching| option
+  55. The |g:ycm_language_server| option
+  56. The |g:ycm_disable_signature_help| option
+  57. The |g:ycm_gopls_binary_path| option
+  58. The |g:ycm_gopls_args| option
+  59. The |g:ycm_rls_binary_path| and 'g:ycm_rustc_binary_path' options
+  60. The |g:ycm_tsserver_binary_path| option
+  61. The |g:ycm_roslyn_binary_path| option
  14. FAQ                                                    |youcompleteme-faq|
  15. Contributor Code of Conduct    |youcompleteme-contributor-code-of-conduct|
  16. Contact                                            |youcompleteme-contact|
@@ -177,28 +185,17 @@ Introduction ~
 Image: Gitter room [1] Image: Build status [3] Image: Coverage status [5]
 
 ===============================================================================
-                  *youcompleteme-warning-support-for-python-2-has-been-dropped*
-Warning: Support for Python 2 has been dropped ~
+                       *youcompleteme-warning-support-for-python-3.5-has-ended*
+Warning: Support for Python 3.5 has ended ~
 
-In early 2020, YCM dropped support for Python 2. But we will maintain critical
-fixes on a branch named legacy-py2 [7] for a period of 1 year.
-
-How?
-
-In order to use the legacy Python 2 support, see this post [8]
+In mid 2020, YCM dropped support for Python 3.5 runtime.
 
 Why?
 
-Over the past decade, YouCompleteMe has had an at times fractious, but
-ultimately very successful relationship with Python 2. However, more recently
-it has been carrying on a simultaneous relationship with Python 3. Indeed all
-of YCM and ycmd code is Python 3 code, with a lot of gubbins to make it work
-also on Python 2. This makes the code more complex, requires double testing of
-everything, and restricts the developers from using certain new langauge
-features, ultimately restricting the features we can deliver to users.
+On 13th September 2020, Python 3.5 will be officially end of life. And
+therefore, so will its relationship with YouCompleteMe and ycmd.
 
-On 1st January 2020, Python 2 will be officially end of life. And therefore, so
-will its relationship with YouCompleteMe and ycmd.
+Looking for Python 2 support? Check the Wiki [7].
 
 ===============================================================================
                                             *youcompleteme-help-advice-support*
@@ -212,7 +209,7 @@ you use the supplied 'install.py'.
 Next check the User Guide section on the semantic completer that you are using.
 For C/C++/Objective-C/Objective-C++/CUDA, you _must_ read this section.
 
-Finally, check the FAQ [9].
+Finally, check the FAQ [8].
 
 If, after reading the installation and user guides, and checking the FAQ,
 you're still having trouble, check the contacts section below for how to get in
@@ -243,6 +240,7 @@ Contents ~
   - General Semantic Completion
   - C-family Semantic Completion
   - Java Semantic Completion
+  - C# Semantic Completion
   - Python Semantic Completion
   - Rust Semantic Completion
   - Go Semantic Completion
@@ -276,24 +274,24 @@ Contents ~
 Intro ~
 
 YouCompleteMe is a fast, as-you-type, fuzzy-search code completion engine for
-Vim [10]. It has several completion engines:
+Vim [9]. It has several completion engines:
 
 - an identifier-based engine that works with every programming language,
-- a powerful clangd [11]-based engine that provides native semantic code
+- a powerful clangd [10]-based engine that provides native semantic code
   completion for C/C++/Objective-C/Objective-C++/CUDA (from now on referred
   to as "the C-family languages"),
-- a Jedi [12]-based completion engine for Python 2 and 3,
-- an OmniSharp-Roslyn [13]-based completion engine for C#,
-- a Gopls [14]-based completion engine for Go,
-- a TSServer [15]-based completion engine for JavaScript and TypeScript,
-- a rls [16]-based completion engine for Rust,
-- a jdt.ls [17]-based completion engine for Java.
+- a Jedi [11]-based completion engine for Python 2 and 3,
+- an OmniSharp-Roslyn [12]-based completion engine for C#,
+- a Gopls [13]-based completion engine for Go,
+- a TSServer [14]-based completion engine for JavaScript and TypeScript,
+- a rls [15]-based completion engine for Rust,
+- a jdt.ls [16]-based completion engine for Java.
 - a generic Language Server Protocol implementation for any language
 - and an omnifunc-based completer that uses data from Vim's omnicomplete
   system to provide semantic completions for many other languages (Ruby, PHP
   etc.).
 
-  Image: YouCompleteMe GIF completion demo (see reference [18])
+  Image: YouCompleteMe GIF completion demo (see reference [17])
 
 Here's an explanation of what happens in the last GIF demo above.
 
@@ -312,7 +310,7 @@ typing to further filter out unwanted completions.
 
 A critical thing to notice is that the completion **filtering is NOT based on
 the input being a string prefix of the completion** (but that works too). The
-input needs to be a _subsequence [19] match_ of a completion. This is a fancy
+input needs to be a _subsequence [18] match_ of a completion. This is a fancy
 way of saying that any input characters need to be present in a completion
 string in the order in which they appear in the input. So 'abc' is a
 subsequence of 'xaybgc', but not of 'xbyxaxxc'. After the filter, a complicated
@@ -331,7 +329,7 @@ with a keyboard shortcut; see the rest of the docs).
 
 The last thing that you can see in the demo is YCM's diagnostic display
 features (the little red X that shows up in the left gutter; inspired by
-Syntastic [20]) if you are editing a C-family file. As the completer engine
+Syntastic [19]) if you are editing a C-family file. As the completer engine
 compiles your file and detects warnings or errors, they will be presented in
 various ways. You don't need to save your file or press any keyboard shortcut
 to trigger this, it "just happens" in the background.
@@ -346,19 +344,20 @@ features plus extra:
 
 **And that's not all...**
 
-YCM might be the only vim completion engine with the correct unicode support.
+YCM might be the only vim completion engine with the correct Unicode support.
 Though we do assume UTF-8 everywhere.
 
-  Image: YouCompleteMe GIF unicode demo (see reference [21])
+  Image: YouCompleteMe GIF unicode demo (see reference [20])
 
 YCM also provides semantic IDE-like features in a number of languages,
 including:
 
 - displaying signature help (argument hints) when entering the arguments to a
-  function call
+  function call (Vim only)
 - finding declarations, definitions, usages, etc. of identifiers,
 - displaying type information for classes, variables, functions etc.,
 - displaying documentation for methods, members, etc. in the preview window,
+  or in a popup next to the cursor (Vim only)
 - fixing common coding errors, like missing semi-colons, typos, etc.,
 - semantic renaming of variables across files,
 - formatting code,
@@ -366,7 +365,7 @@ including:
 
 For example, here's a demo of signature help:
 
-  Image: Signature Help Early Demo (see reference [22])
+  Image: Signature Help Early Demo (see reference [21])
 
 Below we can see YCM being able to do a few things:
 
@@ -377,7 +376,12 @@ Below we can see YCM being able to do a few things:
 - Not shown in the gif is |GoToImplementation| and |GoToType| for servers
   that support it.
 
-  Image: YouCompleteMe GIF subcommands demo (see reference [23])
+  Image: YouCompleteMe GIF subcommands demo (see reference [22])
+
+And here's some documentation being shown in a hover popup, automatically and
+manually:
+
+  Image: hover demo (see reference [23])
 
 Features vary by file type, so make sure to check out the file type feature
 summary and the full list of completer subcommands to find out what's available
@@ -398,6 +402,7 @@ macOS ~
                           *youcompleteme-quick-start-installing-all-completers*
 Quick start, installing all completers ~
 
+- Install YCM plugin via Vundle [25]
 - Install cmake, macvim and python; Note that the _system_ vim is not
   supported.
 
@@ -428,13 +433,13 @@ These instructions (using 'install.py') are the quickest way to install
 YouCompleteMe, however they may not work for everyone. If the following
 instructions don't work for you, check out the full installation guide.
 
-MacVim [25] is required. YCM won't work with the pre-installed Vim from Apple
-as its Python support is broken. If you don't already use MacVim [25], install
-it with Homebrew [26]. Install CMake as well:
+MacVim [26] is required. YCM won't work with the pre-installed Vim from Apple
+as its Python support is broken. If you don't already use MacVim [26], install
+it with Homebrew [27]. Install CMake as well:
 >
   brew install cmake macvim
 <
-Install YouCompleteMe with Vundle [27].
+Install YouCompleteMe with Vundle [25].
 
 **Remember:** YCM is a plugin with a compiled component. If you **update** YCM
 using Vundle and the 'ycm_core' library APIs have changed (happens rarely), YCM
@@ -458,7 +463,7 @@ Compiling YCM **without** semantic support for C-family languages:
 <
 The following additional language support options are available:
 
-- C# support: install Mono with Homebrew [26] or by downloading the Mono
+- C# support: install Mono with Homebrew [27] or by downloading the Mono
   macOS package [28] and add '--cs-completer' when calling 'install.py'.
 
 - Go support: install Go [29] and add '--go-completer' when calling
@@ -496,6 +501,7 @@ Linux 64-bit ~
 -------------------------------------------------------------------------------
 Quick start, installing all completers ~
 
+- Install YCM plugin via Vundle [25]
 - Install cmake, vim and python
 
 
@@ -527,7 +533,7 @@ recent enough. You can see the version of Vim installed by running 'vim
 
 **NOTE**: For all features, such as signature help, use Vim 8.1.1875 or later.
 
-Install YouCompleteMe with Vundle [27].
+Install YouCompleteMe with Vundle [25].
 
 **Remember:** YCM is a plugin with a compiled component. If you **update** YCM
 using Vundle and the 'ycm_core' library APIs have changed (happens rarely), YCM
@@ -604,6 +610,7 @@ Windows ~
 -------------------------------------------------------------------------------
 Quick start, installing all completers ~
 
+- Install YCM plugin via Vundle [25]
 - Install Visual Studio Build Tools 2017 [34]
 - Install cmake, vim and python
 - Install go, node and npm
@@ -645,7 +652,7 @@ that it does not prevent you from editing a file in another encoding than
 UTF-8. You can do that by specifying the '|++enc|' argument to the ':e'
 command.
 
-Install YouCompleteMe with Vundle [27].
+Install YouCompleteMe with Vundle [25].
 
 **Remember:** YCM is a plugin with a compiled component. If you **update** YCM
 using Vundle and the 'ycm_core' library APIs have changed (happens rarely), YCM
@@ -659,8 +666,8 @@ Download and install the following software:
   of Python you install must match up exactly with the version of Python that
   Vim is looking for. Type ':version' and look at the bottom of the page at
   the list of compiler flags. Look for flags that look similar to
-  '-DDYNAMIC_PYTHON3_DLL=\"python35.dll\"'. This indicates that Vim is
-  looking for Python 3.5. You'll need one or the other installed, matching
+  '-DDYNAMIC_PYTHON3_DLL=\"python36.dll\"'. This indicates that Vim is
+  looking for Python 3.6. You'll need one or the other installed, matching
   the version number exactly.
 
 - CMake [38]. Add CMake executable to the PATH environment variable.
@@ -723,6 +730,7 @@ FreeBSD/OpenBSD ~
 -------------------------------------------------------------------------------
 Quick start, installing all completers ~
 
+- Install YCM plugin via Vundle [25]
 - Install cmake
 
 
@@ -759,7 +767,7 @@ For FreeBSD 11.x, the requirement is cmake:
 >
   pkg install cmake
 <
-Install YouCompleteMe with Vundle [27].
+Install YouCompleteMe with Vundle [25].
 
 **Remember:** YCM is a plugin with a compiled component. If you **update** YCM
 using Vundle and the 'ycm_core' library APIs have changed (happens rarely), YCM
@@ -842,6 +850,7 @@ C-family languages (C, C++, Objective C, Objective C++, CUDA) ~
 - Signature help
 - Real-time diagnostic display
 - Go to include/declaration/definition (|GoTo|, etc.)
+- Find Symbol ('GoToSymbol')
 - View documentation comments for identifiers (|GetDoc|)
 - Type information for identifiers (|GetType|)
 - Automatically fix certain errors (|FixIt|)
@@ -858,6 +867,7 @@ C♯ ~
 - Real-time diagnostic display
 - Go to declaration/definition (|GoTo|, etc.)
 - Go to implementation (|GoToImplementation|)
+- Find Symbol ('GoToSymbol')
 - View documentation comments for identifiers (|GetDoc|)
 - Type information for identifiers (|GetType|)
 - Automatically fix certain errors (|FixIt|)
@@ -872,6 +882,7 @@ Python ~
 - Semantic auto-completion
 - Signature help
 - Go to definition (|GoTo|)
+- Find Symbol ('GoToSymbol')
 - Reference finding (|GoToReferences|)
 - View documentation comments for identifiers (|GetDoc|)
 - Type information for identifiers (|GetType|)
@@ -885,6 +896,7 @@ Go ~
 - Real-time diagnostic display
 - Go to declaration/definition (|GoTo|, etc.)
 - Go to type definition (|GoToType|)
+- Go to implementation (|GoToImplementation|)
 - Automatically fix certain errors (|FixIt|)
 - View documentation comments for identifiers (|GetDoc|)
 - Type information for identifiers (|GetType|)
@@ -902,6 +914,7 @@ JavaScript and TypeScript ~
   identical)
 - Go to type definition (|GoToType|)
 - Go to implementation (|GoToImplementation|)
+- Find Symbol ('GoToSymbol')
 - Reference finding (|GoToReferences|)
 - View documentation comments for identifiers (|GetDoc|)
 - Type information for identifiers (|GetType|)
@@ -939,6 +952,7 @@ Java ~
   identical)
 - Go to type definition (|GoToType|)
 - Go to implementation (|GoToImplementation|)
+- Find Symbol ('GoToSymbol')
 - Reference finding (|GoToReferences|)
 - View documentation comments for identifiers (|GetDoc|)
 - Type information for identifiers (|GetType|)
@@ -1239,7 +1253,7 @@ Java Project Files ~
 
 In order to provide semantic analysis, the Java completion engine requires
 knowledge of your project structure. In particular it needs to know the class
-path to use, when compiling your code. Fortunately jdt.ls [17] supports eclipse
+path to use, when compiling your code. Fortunately jdt.ls [16] supports eclipse
 project files [52], maven projects [53] and gradle projects [54].
 
 **NOTE:** Our recommendation is to use either maven or gradle projects.
@@ -1278,7 +1292,7 @@ Eclipse Projects ~
 Eclipse style projects require two files: .project [52] and .classpath [55].
 
 If your project already has these files due to previously being set up within
-eclipse, then no setup is required. jdt.ls [17] should load the project just
+eclipse, then no setup is required. jdt.ls [16] should load the project just
 fine (it's basically eclipse after all).
 
 However, if not, it is possible (easy in fact) to craft them manually, though
@@ -1350,7 +1364,7 @@ correctly.
                                           *youcompleteme-c-semantic-completion*
 C# Semantic Completion ~
 
-YCM relies on OmniSharp-Roslyn [13] to provide completion and code navigation.
+YCM relies on OmniSharp-Roslyn [12] to provide completion and code navigation.
 OmniSharp-Roslyn needs a solution file for a C# project and there are two ways
 of letting YCM know about your solution files.
 
@@ -1381,7 +1395,7 @@ fall back to the other way of finding the file.
                                      *youcompleteme-python-semantic-completion*
 Python Semantic Completion ~
 
-YCM relies on the Jedi [12] engine to provide completion and code navigation.
+YCM relies on the Jedi [11] engine to provide completion and code navigation.
 By default, it will pick the version of Python running the ycmd server [42] and
 use its 'sys.path'. While this is fine for simple projects, this needs to be
 configurable when working with virtual environments or in a project with
@@ -1535,8 +1549,8 @@ required notification [61].
 JavaScript and TypeScript Semantic Completion ~
 
 **NOTE:** YCM originally used the Tern [62] engine for JavaScript but due to
-Tern [62] not being maintained anymore by its main author and the TSServer [15]
-engine offering more features, YCM is moving to TSServer [15]. This won't
+Tern [62] not being maintained anymore by its main author and the TSServer [14]
+engine offering more features, YCM is moving to TSServer [14]. This won't
 affect you if you were already using Tern [62] but you are encouraged to do the
 switch by deleting the 'third_party/ycmd/third_party/tern_runtime/node_modules'
 directory in YCM folder. If you are a new user but still want to use Tern [62],
@@ -1544,12 +1558,12 @@ you should pass the '--js-completer' option to the 'install.py' script during
 installation. Further instructions on how to setup YCM with Tern [62] are
 available on the wiki [63].
 
-All JavaScript and TypeScript features are provided by the TSServer [15]
+All JavaScript and TypeScript features are provided by the TSServer [14]
 engine, which is included in the TypeScript SDK. To enable these features,
 install Node.js and npm [30] and call the 'install.py' script with the
 '--ts-completer' flag.
 
-TSServer [15] relies on the 'jsconfig.json' file [64] for JavaScript and the
+TSServer [14] relies on the 'jsconfig.json' file [64] for JavaScript and the
 'tsconfig.json' file [65] for TypeScript to analyze your project. Ensure the
 file exists at the root of your project.
 
@@ -1568,7 +1582,7 @@ Semantic Completion for Other Languages ~
 
 C-family, C#, Go, Java, Python, Rust, and JavaScript/TypeScript languages are
 supported natively by YouCompleteMe using the Clang [66], OmniSharp-Roslyn
-[13], Gopls [14], jdt.ls [17], Jedi [12], rls [16], and TSServer [15] engines,
+[12], Gopls [13], jdt.ls [16], Jedi [11], rls [15], and TSServer [14] engines,
 respectively. Check the installation section for instructions to enable these
 features if desired.
 
@@ -1921,6 +1935,16 @@ bit of latency.
 Supported in filetypes: 'c, cpp, objc, objcpp, cuda'
 
 -------------------------------------------------------------------------------
+                                                      *GoToSymbol-symbol-query*
+The 'GoToSymbol <symbol query>' subcommand ~
+
+Finds the definition of all symbols matching a specified string. Note that this
+does not use any sort of smart/fuzzy matching.
+
+Supported in filetypes: 'c, cpp, objc, objcpp, cuda, cs, java, javascript,
+python, typescript'
+
+-------------------------------------------------------------------------------
 The *GoToReferences* subcommand
 
 This command attempts to find all of the references within the project to the
@@ -1937,7 +1961,7 @@ Looks up the symbol under the cursor and jumps to its implementation (i.e.
 non-interface). If there are multiple implementations, instead provides a list
 of implementations to choose from.
 
-Supported in filetypes: 'cs, java, rust, typescript, javascript'
+Supported in filetypes: 'cs, go, java, rust, typescript, javascript'
 
 -------------------------------------------------------------------------------
 The *GoToImplementationElseDeclaration* subcommand
@@ -2175,7 +2199,7 @@ flags.
 The 'ExecuteCommand <args>' subcommand ~
 
 Some LSP completers (currently Rust and Java completers) support executing
-server specific commands. Consult the rls [16] and jdt.ls [17] respective
+server specific commands. Consult the rls [15] and jdt.ls [16] respective
 documentations to find out what commands are supported and which arguments are
 expected.
 
@@ -2230,6 +2254,47 @@ For example:
 >
   call youcompleteme#GetWarningCount()
 <
+-------------------------------------------------------------------------------
+                                           *youcompleteme#GetCommandResponse()*
+The 'youcompleteme#GetCommandResponse( ... )' function ~
+
+Run a completer subcommand and return the result as a string. This can be
+useful for example to display the 'GetGoc' output in a popup window, e.g.:
+>
+  let s:ycm_hover_popup = -1
+  function s:Hover()
+    let response = youcompleteme#GetCommandResponse( 'GetDoc' )
+    if response == ''
+      return
+    endif
+  
+    call popup_hide( s:ycm_hover_popup )
+    let s:ycm_hover_popup = popup_atcursor( balloon_split( response ), {} )
+  endfunction
+  
+  " CursorHold triggers in normal mode after a delay
+  autocmd CursorHold * call s:Hover()
+  " Or, if you prefer, a mapping:
+  nnoremap <silent> <leader>D :call <SID>Hover()<CR>
+<
+**NOTE**: This is only an example, for real hover support, see
+|g:ycm_auto_hover|.
+
+If the completer subcommand result is not a string (for example, it's a FixIt
+or a Location), or if the completer subcommand raises an error, an empty string
+is returned, so that calling code does not have to check for complex error
+conditions.
+
+The arguments to the function are the same as the arguments to the
+|:YcmCompleter| ex command, e.g. the name of the subcommand, followed by any
+additional subcommand arguments. As with the 'YcmCompleter' command, if the
+first argument is 'ft=<filetype>' the request is targetted at the specified
+filetype completer. This is an advanced usage and not necessary in most cases.
+
+NOTE: The request is run synchronously and blocks Vim until the response is
+received, so we do not recommend running this as part of an autocommand that
+triggers frequently.
+
 ===============================================================================
                                                    *youcompleteme-autocommands*
 Autocommands ~
@@ -2571,6 +2636,53 @@ Default: '1'
   let g:ycm_echo_current_diagnostic = 1
 <
 -------------------------------------------------------------------------------
+The *g:ycm_auto_hover* option
+
+This option controls whether or not YCM shows documentation in a popup at the
+cursor location after a short delay. Only supported in Vim.
+
+When this option is set to "'CursorHold'", the popup is displayed on the
+'CursorHold' autocommand. See ':help CursorHold' for the details, but this
+means that it is displayed after 'updatetime' milliseconds. When set to an
+empty string, the popup is not automatically displayed.
+
+In addition to this setting, there is the '<plug>(YCMHover)' mapping, which can
+be used to manually trigger or hide the popup (it works like a toggle). For
+example:
+>
+  nmap <leader>D <plug>(YCMHover)
+<
+After dismissing the popup with this mapping, it will not be automatically
+triggered again until the cursor is moved (i.e. 'CursorMoved' autocommand).
+
+The displayed documentation depends on what the completer for the current
+language supports. It's selected heuristically in this order of preference:
+
+1. 'GetHover' with 'markdown' syntax
+2. |GetDoc| with no syntax
+3. |GetType| with the syntax of the current file.
+
+You can customise this by manually setting up 'b:ycm_hover' to your liking.
+This buffer-local variable can be set to a dictionary with the following keys:
+
+- 'command': The YCM completer subcommand which should be run on hover
+- 'syntax': The syntax to use (as in 'set syntax=') in the popup window for
+  highlighting.
+
+For example, to use C/C++ syntax highlighting in the popup for C-family
+languages, add something like this to your vimrc:
+>
+  augroup MyYCMCustom
+    autocmd!
+    autocmd FileType c,cpp let b:ycm_hover = {
+      \ 'command': 'GetDoc',
+      \ 'syntax': &filetype
+      \ }
+  augroup END
+<
+Default: "'CursorHold'"
+
+-------------------------------------------------------------------------------
 The *g:ycm_filter_diagnostics* option
 
 This option controls which diagnostics will be rendered by YCM. This option
@@ -2834,15 +2946,23 @@ The *g:ycm_add_preview_to_completeopt* option
 
 When this option is set to '1', YCM will add the 'preview' string to Vim's
 'completeopt' option (see ':h completeopt'). If your 'completeopt' option
-already has 'preview' set, there will be no effect. You can see the current
-state of your 'completeopt' setting with ':set completeopt?' (yes, the question
-mark is important).
+already has 'preview' set, there will be no effect. Alternatively, when set to
+'popup' and your version of Vim supports popup windows (see ':help popup'), the
+'popup' string will be used instead. You can see the current state of your
+'completeopt' setting with ':set completeopt?' (yes, the question mark is
+important).
 
 When 'preview' is present in 'completeopt', YCM will use the 'preview' window
 at the top of the file to store detailed information about the current
 completion candidate (but only if the candidate came from the semantic engine).
 For instance, it would show the full function prototype and all the function
 overloads in the window if the current completion is a function name.
+
+When 'popup' is present in 'completeopt', YCM will instead use a 'popup' window
+to the side of the completion popup for storing detailed information about the
+current completion candidate. In addition, YCM may truncate the detailed
+completion information in order to give the popup sufficient room to display
+that detailed information.
 
 Default: '0'
 >
@@ -3223,11 +3343,50 @@ Default: '0'
   " Disable signature help
   let g:ycm_disable_signature_help = 1
 <
+-------------------------------------------------------------------------------
+The *g:ycm_gopls_binary_path* option
+
+In case the system-wide 'gopls' binary is newer than the bundled one, setting
+this option to the path of the system-wide 'gopls' would make YCM use that one
+instead.
+
+If the path is just 'gopls', YCM will search in '$PATH'.
+
+-------------------------------------------------------------------------------
+The *g:ycm_gopls_args* option
+
+Similar to the |g:ycm_clangd_args|, this option allows passing additional flags
+to the 'gopls' command line.
+
+Default: '[]'
+>
+  let g:ycm_gopls_args = []
+<
+-------------------------------------------------------------------------------
+The *g:ycm_rls_binary_path* and 'g:ycm_rustc_binary_path' options
+
+Similar to the 'gopls' path, these two options tell YCM which 'rls' and 'rustc'
+to use.
+
+NOTE: You _need_ to either set both or none of these two.
+
+-------------------------------------------------------------------------------
+The *g:ycm_tsserver_binary_path* option
+
+Similar to the 'gopls' path, this option tells YCM where is the TSServer
+executable located.
+
+-------------------------------------------------------------------------------
+The *g:ycm_roslyn_binary_path* option
+
+Similar to the 'gopls' path, this option tells YCM where is the
+Omnisharp-Roslyn executable located.
+
 ===============================================================================
                                                             *youcompleteme-faq*
 FAQ ~
 
-The FAQ section has been moved to the wiki [9].
+The FAQ section has been moved to the wiki [8].
 
 ===============================================================================
                                     *youcompleteme-contributor-code-of-conduct*
@@ -3272,27 +3431,27 @@ References ~
 [4] https://dev.azure.com/YouCompleteMe/YCM/_apis/build/status/ycm-core.YouCompleteMe?branchName=master
 [5] https://codecov.io/gh/ycm-core/YouCompleteMe
 [6] https://img.shields.io/codecov/c/github/ycm-core/YouCompleteMe/master.svg
-[7] https://github.com/ycm-core/YouCompleteMe/tree/legacy-py2
-[8] https://github.com/ycm-core/YouCompleteMe/issues/3595#issuecomment-584230366
-[9] https://github.com/ycm-core/YouCompleteMe/wiki/FAQ
-[10] https://www.vim.org/
-[11] https://clang.llvm.org/extra/clangd.html
-[12] https://github.com/davidhalter/jedi
-[13] https://github.com/OmniSharp/omnisharp-roslyn
-[14] https://github.com/golang/go/wiki/gopls
-[15] https://github.com/Microsoft/TypeScript/tree/master/src/server
-[16] https://github.com/rust-lang/rls
-[17] https://github.com/eclipse/eclipse.jdt.ls
-[18] https://i.imgur.com/0OP4ood.gif
-[19] https://en.wikipedia.org/wiki/Subsequence
-[20] https://github.com/scrooloose/syntastic
-[21] https://user-images.githubusercontent.com/10026824/34471853-af9cf32a-ef53-11e7-8229-de534058ddc4.gif
-[22] https://user-images.githubusercontent.com/10584846/58738348-5060da80-83fd-11e9-9537-d07fdbf4554c.gif
-[23] https://i.imgur.com/nmUUbdl.gif
+[7] https://github.com/ycm-core/YouCompleteMe/wiki/Python-2
+[8] https://github.com/ycm-core/YouCompleteMe/wiki/FAQ
+[9] https://www.vim.org/
+[10] https://clang.llvm.org/extra/clangd.html
+[11] https://github.com/davidhalter/jedi
+[12] https://github.com/OmniSharp/omnisharp-roslyn
+[13] https://github.com/golang/go/wiki/gopls
+[14] https://github.com/Microsoft/TypeScript/tree/master/src/server
+[15] https://github.com/rust-lang/rls
+[16] https://github.com/eclipse/eclipse.jdt.ls
+[17] https://i.imgur.com/0OP4ood.gif
+[18] https://en.wikipedia.org/wiki/Subsequence
+[19] https://github.com/scrooloose/syntastic
+[20] https://user-images.githubusercontent.com/10026824/34471853-af9cf32a-ef53-11e7-8229-de534058ddc4.gif
+[21] https://user-images.githubusercontent.com/10584846/58738348-5060da80-83fd-11e9-9537-d07fdbf4554c.gif
+[22] https://i.imgur.com/nmUUbdl.gif
+[23] https://user-images.githubusercontent.com/10584846/80312146-91af6500-87db-11ea-996b-7396f3134d1f.gif
 [24] https://github.com/SirVer/ultisnips/blob/master/doc/UltiSnips.txt
-[25] https://macvim-dev.github.io/macvim/
-[26] https://brew.sh
-[27] https://github.com/VundleVim/Vundle.vim#about
+[25] https://github.com/VundleVim/Vundle.vim#about
+[26] https://macvim-dev.github.io/macvim/
+[27] https://brew.sh
 [28] https://www.mono-project.com/docs/getting-started/install/mac/
 [29] https://golang.org/doc/install
 [30] https://docs.npmjs.com/getting-started/installing-node#1-install-nodejs--npm
@@ -3335,7 +3494,7 @@ References ~
 [67] https://github.com/ycm-core/lsp-examples
 [68] http://eclim.org/
 [69] https://github.com/ycm-core/ycmd/blob/master/ycmd/completers/completer.py
-[70] https://github.com/ycm-core/ListToggle
+[70] https://github.com/Valloric/ListToggle
 [71] https://github.com/puremourning/vimspector
 [72] https://github.com/itchyny/lightline.vim
 [73] https://docs.python.org/2/library/re.html#regular-expression-syntax

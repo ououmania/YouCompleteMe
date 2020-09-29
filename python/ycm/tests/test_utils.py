@@ -43,6 +43,8 @@ MATCHDELETE_REGEX = re.compile( '^matchdelete\\((?P<id>\\d+)\\)$' )
 OMNIFUNC_REGEX_FORMAT = (
   '^{omnifunc_name}\\((?P<findstart>[01]),[\'"](?P<base>.*)[\'"]\\)$' )
 FNAMEESCAPE_REGEX = re.compile( '^fnameescape\\(\'(?P<filepath>.+)\'\\)$' )
+STRDISPLAYWIDTH_REGEX = re.compile(
+  '^strdisplaywidth\\( ?\'(?P<text>.+)\' ?\\)$' )
 SIGN_LIST_REGEX = re.compile(
   '^silent! sign place buffer=(?P<bufnr>\\d+)$' )
 SIGN_PLACE_REGEX = re.compile(
@@ -70,6 +72,7 @@ VIM_MATCHES_FOR_WINDOW = defaultdict( list )
 VIM_SIGNS = []
 
 VIM_OPTIONS = {
+  '&completeopt': b'',
   '&previewheight': 12,
   '&columns': 80,
   '&ruler': 0,
@@ -289,7 +292,11 @@ def _MockVimEval( value ):
   if value == REDIR[ 'variable' ]:
     return REDIR[ 'output' ]
 
-  raise VimError( 'Unexpected evaluation: {}'.format( value ) )
+  match = STRDISPLAYWIDTH_REGEX.search( value )
+  if match:
+    return len( match.group( 'text' ) )
+
+  raise VimError( f'Unexpected evaluation: { value }' )
 
 
 def _MockWipeoutBuffer( buffer_number ):
@@ -370,6 +377,14 @@ def _MockVimCommand( command ):
   return DEFAULT
 
 
+def _MockVimOptions( option ):
+  result = VIM_OPTIONS.get( '&' + option )
+  if result is not None:
+    return result
+
+  return None
+
+
 class VimBuffer:
   """An object that looks like a vim.buffer object:
    - |name|     : full path of the buffer with symbolic links resolved;
@@ -437,12 +452,11 @@ class VimBuffer:
       return self.visual_start
     if name == '>':
       return self.visual_end
-    raise ValueError( 'Unexpected mark: {name}'.format( name = name ) )
+    raise ValueError( f'Unexpected mark: { name }' )
 
 
   def __repr__( self ):
-    return "VimBuffer( name = '{}', number = {} )".format( self.name,
-                                                           self.number )
+    return f"VimBuffer( name = '{ self.name }', number = { self.number } )"
 
 
 class VimBuffers:
@@ -485,10 +499,9 @@ class VimWindow:
 
 
   def __repr__( self ):
-    return "VimWindow( number = {}, buffer = {}, cursor = {} )".format(
-      self.number,
-      self.buffer,
-      self.cursor )
+    return ( f'VimWindow( number = { self.number }, '
+                        f'buffer = { self.buffer }, '
+                        f'cursor = { self.cursor } )' )
 
 
 class VimWindows:
@@ -542,8 +555,7 @@ class VimMatch:
 
 
   def __repr__( self ):
-    return "VimMatch( group = '{}', pattern = '{}' )".format( self.group,
-                                                              self.pattern )
+    return f"VimMatch( group = '{ self.group }', pattern = '{ self.pattern }' )"
 
 
   def __getitem__( self, key ):
@@ -570,11 +582,8 @@ class VimSign:
 
 
   def __repr__( self ):
-    return ( "VimSign( id = {}, line = {}, "
-                      "name = '{}', bufnr = {} )".format( self.id,
-                                                          self.line,
-                                                          self.name,
-                                                          self.bufnr ) )
+    return ( f"VimSign( id = { self.id }, line = { self.line }, "
+                      f"name = '{ self.name }', bufnr = { self.bufnr } )" )
 
 
   def __getitem__( self, key ):
@@ -632,6 +641,8 @@ def MockVimModule():
   VIM_MOCK.command = MagicMock( side_effect = _MockVimCommand )
   VIM_MOCK.eval = MagicMock( side_effect = _MockVimEval )
   VIM_MOCK.error = VimError
+  VIM_MOCK.options = MagicMock()
+  VIM_MOCK.options.__getitem__.side_effect = _MockVimOptions
   sys.modules[ 'vim' ] = VIM_MOCK
 
   return VIM_MOCK
@@ -700,8 +711,7 @@ def ExpectedFailure( reason, *exception_matchers ):
         # Failed for the right reason
         pytest.skip( reason )
       else:
-        raise AssertionError( 'Test was expected to fail: {}'.format(
-          reason ) )
+        raise AssertionError( f'Test was expected to fail: { reason }' )
     return Wrapper
 
   return decorator
