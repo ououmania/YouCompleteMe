@@ -104,6 +104,9 @@ class CommandRequest( BaseRequest ):
     if 'detailed_info' in self._response:
       return self._HandleDetailedInfoResponse( modifiers )
 
+    if 'references' in self._response:
+      return self._HandleReferencesResponse( buffer_command, modifiers )
+
     # The only other type of response we understand is GoTo, and that is the
     # only one that we can't detect just by inspecting the response (it should
     # either be a single location or a list)
@@ -213,6 +216,23 @@ class CommandRequest( BaseRequest ):
   def _HandleDetailedInfoResponse( self, modifiers ):
     vimsupport.WriteToPreviewWindow( self._response[ 'detailed_info' ],
                                      modifiers )
+
+
+  def _HandleReferencesResponse( self, buffer_command, modifiers ):
+    references = self._response[ 'references' ]
+    if not len( references ):
+      vimsupport.PostVimMessage( 'No references found', warning = False )
+    elif len( references ) > 1:
+      vimsupport.SetQuickFixList(
+        [ vimsupport.BuildQfListItem( x ) for x in references ] )
+      vimsupport.OpenQuickFixList( focus = True, autoclose = True )
+    else:
+      reference = references[0]
+      vimsupport.JumpToLocation( reference[ 'filepath' ],
+                                 reference[ 'line_num' ],
+                                 reference[ 'column_num' ],
+                                 modifiers,
+                                 buffer_command )
 
 
 def SendCommandRequestAsync( arguments,
