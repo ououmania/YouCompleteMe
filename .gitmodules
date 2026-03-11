@@ -1,3 +1,4 @@
 [submodule "third_party/ycmd"]
 	path = third_party/ycmd
 	url = https://github.com/ououmania/ycmd
+	branch = master
