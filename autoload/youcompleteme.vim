@@ -1406,6 +1406,7 @@ function! s:SetUpCommands()
         \                                      <line1>,
         \                                      <line2>,
         \                                      <f-args>)
+  command! YcmShowReferences call s:ShowReferences()
   command! YcmDiags call s:ShowDiagnostics()
   command! -nargs=? YcmShowDetailedDiagnostic
         \ call s:ShowDetailedDiagnostic( <f-args> )
@@ -1560,6 +1561,11 @@ function! s:PollCommands( timer_id ) abort
     let s:pollers.command.id = timer_start( s:pollers.command.wait_milliseconds,
                                           \ function( 's:PollCommands' ) )
   endif
+endfunction
+
+
+function! s:ShowReferences()
+  call s:CompleterCommand( '', -1, line( '.' ), line( '.' ), 'GoToReferences' )
 endfunction
 
 
