@@ -19,7 +19,9 @@ import base64
 import json
 import logging
 import os
+import select
 import signal
+import time
 import vim
 from subprocess import PIPE
 from tempfile import NamedTemporaryFile
@@ -176,7 +178,6 @@ class YouCompleteMe:
     self._signature_help_available_requests = SigHelpAvailableByFileType()
     self._command_requests = {}
     self._next_command_request_id = 0
-    self._command_request_meta = {}
 
     self._signature_help_state = signature_help.SignatureHelpState()
     self._user_options = base.GetUserOptions( self._default_options )
@@ -470,11 +471,46 @@ class YouCompleteMe:
       has_range,
       start_line,
       end_line )
-    return SendCommandRequest(
-      final_arguments,
-      modifiers,
-      self._user_options[ 'goto_buffer_command' ],
-      extra_data )
+
+    request = SendCommandRequestAsync( final_arguments, extra_data, silent = False )
+
+    def _cancel_on_sigint( sig, frame ):
+      raise KeyboardInterrupt
+
+    old_handler = signal.signal( signal.SIGINT, _cancel_on_sigint )
+    old_mask = signal.pthread_sigmask( signal.SIG_UNBLOCK, { signal.SIGINT } )
+    try:
+      tty_fd = os.open( '/dev/tty', os.O_RDONLY | os.O_NONBLOCK )
+    except OSError:
+      tty_fd = -1
+
+    try:
+      while not request.Done():
+        if tty_fd >= 0:
+          r, _, _ = select.select( [ tty_fd ], [], [], 0.05 )
+          if r:
+            data = os.read( tty_fd, 64 )
+            if b'\x03' in data:
+              BaseRequest.PostDataToHandlerAsync( BuildRequestData(),
+                                                  'cancel_last_command' )
+              break
+        else:
+          time.sleep( 0.05 )
+      else:
+        request.RunPostCommandActionsIfNeeded(
+          modifiers,
+          self._user_options[ 'goto_buffer_command' ] )
+    except KeyboardInterrupt:
+      BaseRequest.PostDataToHandlerAsync( BuildRequestData(),
+                                          'cancel_last_command' )
+    finally:
+      if tty_fd >= 0:
+        try:
+          os.close( tty_fd )
+        except OSError:
+          pass
+      signal.pthread_sigmask( signal.SIG_SETMASK, old_mask )
+      signal.signal( signal.SIGINT, old_handler )
 
 
   def GetCommandResponse( self, arguments ):
@@ -512,44 +548,6 @@ class YouCompleteMe:
 
   def FlushCommandRequest( self, request_id ):
     self._command_requests.pop( request_id, None )
-
-
-  def SendCompleterCommandAsync( self,
-                                 arguments,
-                                 modifiers,
-                                 has_range,
-                                 start_line,
-                                 end_line ):
-    final_arguments, extra_data = self._GetCommandRequestArguments(
-      arguments,
-      has_range,
-      start_line,
-      end_line )
-    request_id = self._next_command_request_id
-    self._next_command_request_id += 1
-    self._command_requests[ request_id ] = SendCommandRequestAsync(
-      final_arguments,
-      extra_data,
-      silent = False )
-    self._command_request_meta[ request_id ] = {
-      'modifiers': modifiers,
-      'buffer_command': self._user_options[ 'goto_buffer_command' ]
-    }
-    return request_id
-
-
-  def RunCompleterCommandActions( self, request_id ):
-    meta = self._command_request_meta.pop( request_id, None )
-    request = self._command_requests.pop( request_id, None )
-    if request is not None and meta is not None:
-      request.RunPostCommandActionsIfNeeded(
-        meta[ 'modifiers' ],
-        meta[ 'buffer_command' ] )
-
-
-  def CancelLastCompleterCommand( self ):
-    BaseRequest.PostDataToHandlerAsync(
-      BuildRequestData(), 'cancel_last_command' )
 
 
   def GetDefinedSubcommands( self ):

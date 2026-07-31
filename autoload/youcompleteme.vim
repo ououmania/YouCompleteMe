@@ -1545,12 +1545,6 @@ function! s:PollCommands( timer_id ) abort
       let poll_again = 1
       continue
     else
-      if get( request, 'action', '' ) ==# 'run_actions'
-        py3 ycm_state.RunCompleterCommandActions(
-              \ int( vim.eval( 'request_id' ) ) )
-        call remove( s:pollers.command.requests, request_id )
-        continue
-      endif
       let result = py3eval( 'ycm_state.GetCommandRequest( '
                           \ . 'int( vim.eval( "request_id" ) ) ).'
                           \ . request.response_func
@@ -1578,35 +1572,13 @@ endfunction
 
 
 function! s:CompleterCommand( mods, count, line1, line2, ... )
-  let request_id = py3eval(
-        \ 'ycm_state.SendCompleterCommandAsync(' .
-        \ 'vim.eval( "a:000" ),' .
-        \ 'vim.eval( "a:mods" ),' .
-        \ 'vimsupport.GetBoolValue( "a:count != -1" ),' .
-        \ 'vimsupport.GetIntValue( "a:line1" ),' .
-        \ 'vimsupport.GetIntValue( "a:line2" ) )' )
-  let s:pollers.command.requests[ request_id ] = {
-        \ 'action': 'run_actions',
-        \ 'origin': 'completer_command'
-        \ }
-  if s:pollers.command.id == -1
-    let s:pollers.command.id = timer_start( s:pollers.command.wait_milliseconds,
-                                          \ function( 's:PollCommands' ) )
-  endif
+  py3 ycm_state.SendCommandRequest(
+        \ vim.eval( 'a:000' ),
+        \ vim.eval( 'a:mods' ),
+        \ vimsupport.GetBoolValue( 'a:count != -1' ),
+        \ vimsupport.GetIntValue( 'a:line1' ),
+        \ vimsupport.GetIntValue( 'a:line2' ) )
 endfunction
-
-
-function! s:CancelCompleterCommand() abort
-  if !empty( s:pollers.command.requests )
-    call s:StopPoller( s:pollers.command )
-    let s:pollers.command.requests = {}
-    py3 ycm_state.CancelLastCompleterCommand()
-  else
-    call feedkeys( "\<C-c>", 'n' )
-  endif
-endfunction
-
-nnoremap <silent> <C-c> <Cmd>call <SID>CancelCompleterCommand()<CR>
 
 
 function! youcompleteme#SubCommandsComplete( arglead, cmdline, cursorpos )
