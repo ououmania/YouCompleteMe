@@ -176,6 +176,7 @@ class YouCompleteMe:
     self._signature_help_available_requests = SigHelpAvailableByFileType()
     self._command_requests = {}
     self._next_command_request_id = 0
+    self._command_request_meta = {}
 
     self._signature_help_state = signature_help.SignatureHelpState()
     self._user_options = base.GetUserOptions( self._default_options )
@@ -511,6 +512,44 @@ class YouCompleteMe:
 
   def FlushCommandRequest( self, request_id ):
     self._command_requests.pop( request_id, None )
+
+
+  def SendCompleterCommandAsync( self,
+                                 arguments,
+                                 modifiers,
+                                 has_range,
+                                 start_line,
+                                 end_line ):
+    final_arguments, extra_data = self._GetCommandRequestArguments(
+      arguments,
+      has_range,
+      start_line,
+      end_line )
+    request_id = self._next_command_request_id
+    self._next_command_request_id += 1
+    self._command_requests[ request_id ] = SendCommandRequestAsync(
+      final_arguments,
+      extra_data,
+      silent = False )
+    self._command_request_meta[ request_id ] = {
+      'modifiers': modifiers,
+      'buffer_command': self._user_options[ 'goto_buffer_command' ]
+    }
+    return request_id
+
+
+  def RunCompleterCommandActions( self, request_id ):
+    meta = self._command_request_meta.pop( request_id, None )
+    request = self._command_requests.pop( request_id, None )
+    if request is not None and meta is not None:
+      request.RunPostCommandActionsIfNeeded(
+        meta[ 'modifiers' ],
+        meta[ 'buffer_command' ] )
+
+
+  def CancelLastCompleterCommand( self ):
+    BaseRequest.PostDataToHandlerAsync(
+      BuildRequestData(), 'cancel_last_command' )
 
 
   def GetDefinedSubcommands( self ):
