@@ -39,6 +39,7 @@ from ycm.client.command_request import ( SendCommandRequest,
                                          SendCommandRequestAsync,
                                          GetCommandResponse,
                                          GetRawCommandResponse )
+from ycm.client.messages_request import GetProgressSummary
 from ycm.client.completion_request import CompletionRequest
 from ycm.client.resolve_completion_request import ResolveCompletionItem
 from ycm.client.signature_help_request import ( SignatureHelpRequest,
@@ -472,6 +473,12 @@ class YouCompleteMe:
       start_line,
       end_line )
 
+    if final_arguments and final_arguments[ 0 ].startswith( 'GoTo' ):
+      if GetProgressSummary():
+        vimsupport.PostVimMessage( '[ycm] Server still indexing, '
+                                   'GoTo will block until indexing completes',
+                                   warning = True )
+
     request = SendCommandRequestAsync( final_arguments, extra_data, silent = False )
 
     def _cancel_on_sigint( sig, frame ):
@@ -493,6 +500,8 @@ class YouCompleteMe:
             if b'\x03' in data:
               BaseRequest.PostDataToHandlerAsync( BuildRequestData(),
                                                   'cancel_last_command' )
+              vim.command( 'redraw' )
+              vim.command( "echo ''" )
               break
         else:
           time.sleep( 0.05 )
@@ -503,6 +512,8 @@ class YouCompleteMe:
     except KeyboardInterrupt:
       BaseRequest.PostDataToHandlerAsync( BuildRequestData(),
                                           'cancel_last_command' )
+      vim.command( 'redraw' )
+      vim.command( "echo ''" )
     finally:
       if tty_fd >= 0:
         try:

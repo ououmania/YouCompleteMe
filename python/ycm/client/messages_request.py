@@ -15,6 +15,8 @@
 # You should have received a copy of the GNU General Public License
 # along with YouCompleteMe.  If not, see <http://www.gnu.org/licenses/>.
 
+import vim
+
 from ycm.client.base_request import BaseRequest, BuildRequestData
 from ycm.vimsupport import PostVimMessage
 
@@ -24,6 +26,8 @@ _logger = logging.getLogger( __name__ )
 
 # Looooong poll
 TIMEOUT_SECONDS = 60
+
+_progress_tokens = {}
 
 
 class MessagesPoll( BaseRequest ):
@@ -60,6 +64,7 @@ class MessagesPoll( BaseRequest ):
                                   display_message = False )
     if response is None:
       # Server returned an exception.
+      _ClearProgress()
       return False
 
     poll_again = _HandlePollResponse( response, diagnostics_handler )
@@ -81,11 +86,78 @@ def _HandlePollResponse( response, diagnostics_handler ):
         diagnostics_handler.UpdateWithNewDiagnosticsForFile(
           notification[ 'filepath' ],
           notification[ 'diagnostics' ] )
+      elif 'lsp_progress' in notification:
+        _HandleProgressNotification( notification[ 'lsp_progress' ] )
   elif response is False:
-    # Don't keep polling for this file
+    # Don't keep polling for this file; clear any pending progress display
+    _ClearProgress()
     return False
   # else any truthy response means "nothing to see here; poll again in a
   # while"
 
   # Start the next poll (only if the last poll didn't raise an exception)
   return True
+
+
+def GetProgressSummary():
+  """Returns a summary of active LSP progress, or None if idle."""
+  if not _progress_tokens:
+    return None
+  parts = []
+  for p in _progress_tokens.values():
+    title = p.get( 'title', '' )
+    message = p.get( 'message', '' )
+    percentage = p.get( 'percentage' )
+    text = title
+    if message:
+      text = f'{ text }: { message }' if text else message
+    if percentage is not None:
+      text = f'{ text } ({ int( percentage ) }%)'
+    if text:
+      parts.append( text )
+  return ' | '.join( parts ) if parts else None
+
+
+def _ClearProgress():
+  global _progress_tokens
+  _progress_tokens.clear()
+  vim.command( 'redraw' )
+  vim.command( "echo ''" )
+
+
+def _HandleProgressNotification( progress ):
+  global _progress_tokens
+  kind = progress.get( 'kind', '' )
+  token = str( progress.get( 'token', '' ) )
+
+  if kind == 'begin':
+    _progress_tokens[ token ] = progress
+    _UpdateProgressEcho()
+  elif kind == 'report':
+    if token in _progress_tokens:
+      _progress_tokens[ token ].update( progress )
+      _UpdateProgressEcho()
+  elif kind == 'end':
+    _progress_tokens.pop( token, None )
+    if not _progress_tokens:
+      vim.command( 'redraw' )
+      vim.command( "echo ''" )
+
+
+def _UpdateProgressEcho():
+  parts = []
+  for progress in _progress_tokens.values():
+    title = progress.get( 'title', '' )
+    message = progress.get( 'message', '' )
+    percentage = progress.get( 'percentage' )
+    text = title
+    if message:
+      text = f'{ text }: { message }' if text else message
+    if percentage is not None:
+      text = f'{ text } ({ int( percentage ) }%)'
+    if text:
+      parts.append( text )
+  if parts:
+    msg = '[ycm: ' + ' | '.join( parts ) + ']'
+    vim.command( 'redraw' )
+    vim.command( "echo '" + msg.replace( "'", "''" ) + "'" )
