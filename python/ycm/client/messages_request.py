@@ -15,19 +15,42 @@
 # You should have received a copy of the GNU General Public License
 # along with YouCompleteMe.  If not, see <http://www.gnu.org/licenses/>.
 
+import json
+import logging
+import time
+
 import vim
 
 from ycm.client.base_request import BaseRequest, BuildRequestData
-from ycm.vimsupport import PostVimMessage
-
-import logging
+from ycm.vimsupport import ( GetIntValue,
+                             PostVimMessage,
+                             VimSupportsPopupWindows )
 
 _logger = logging.getLogger( __name__ )
 
 # Looooong poll
 TIMEOUT_SECONDS = 60
 
+PROGRESS_POPUP = 'popup'
+PROGRESS_STATUSLINE = 'statusline'
+PROGRESS_NONE = 'none'
+
+# 两次 popup 刷新的最短间隔（秒），避免 report 刷屏
+PROGRESS_UPDATE_MIN_INTERVAL = 0.1
+
 _progress_tokens = {}
+_progress_popup_id = None
+_last_progress_summary = None
+_last_progress_update = 0.0
+
+_PROGRESS_POPUP_OPTIONS = {
+  'line': -1,
+  'col': 1,
+  'pos': 'botleft',
+  'wrap': 0,
+  'fixed': 1,
+  'flip': 1,
+}
 
 
 class MessagesPoll( BaseRequest ):
@@ -118,46 +141,79 @@ def GetProgressSummary():
   return ' | '.join( parts ) if parts else None
 
 
+def GetLspProgress():
+  """Returns a summary of active LSP progress for use in the statusline, or an
+  empty string if idle."""
+  summary = GetProgressSummary()
+  return summary if summary is not None else ''
+
+
 def _ClearProgress():
-  global _progress_tokens
   _progress_tokens.clear()
-  vim.command( 'redraw' )
-  vim.command( "echo ''" )
+  _CloseProgressPopup()
 
 
 def _HandleProgressNotification( progress ):
-  global _progress_tokens
   kind = progress.get( 'kind', '' )
   token = str( progress.get( 'token', '' ) )
 
   if kind == 'begin':
     _progress_tokens[ token ] = progress
-    _UpdateProgressEcho()
   elif kind == 'report':
     if token in _progress_tokens:
       _progress_tokens[ token ].update( progress )
-      _UpdateProgressEcho()
   elif kind == 'end':
     _progress_tokens.pop( token, None )
-    if not _progress_tokens:
-      vim.command( 'redraw' )
-      vim.command( "echo ''" )
+
+  _UpdateProgressDisplay()
 
 
-def _UpdateProgressEcho():
-  parts = []
-  for progress in _progress_tokens.values():
-    title = progress.get( 'title', '' )
-    message = progress.get( 'message', '' )
-    percentage = progress.get( 'percentage' )
-    text = title
-    if message:
-      text = f'{ text }: { message }' if text else message
-    if percentage is not None:
-      text = f'{ text } ({ int( percentage ) }%)'
-    if text:
-      parts.append( text )
-  if parts:
-    msg = '[ycm: ' + ' | '.join( parts ) + ']'
-    vim.command( 'redraw' )
-    vim.command( "echo '" + msg.replace( "'", "''" ) + "'" )
+def _GetProgressDisplayMode():
+  mode = vim.vars.get( 'ycm_show_lsp_progress', PROGRESS_POPUP )
+  if mode in ( PROGRESS_POPUP, PROGRESS_STATUSLINE ):
+    return mode
+  return PROGRESS_NONE
+
+
+def _UpdateProgressDisplay():
+  if _GetProgressDisplayMode() != PROGRESS_POPUP:
+    return
+  if not VimSupportsPopupWindows():
+    return
+  _UpdateProgressPopup( GetProgressSummary() )
+
+
+def _UpdateProgressPopup( summary ):
+  global _progress_popup_id, _last_progress_summary, _last_progress_update
+
+  if summary is None:
+    _CloseProgressPopup()
+    return
+
+  if summary == _last_progress_summary and _progress_popup_id is not None:
+    return
+
+  now = time.time()
+  if ( _progress_popup_id is not None and
+       now - _last_progress_update < PROGRESS_UPDATE_MIN_INTERVAL ):
+    return
+
+  lines = [ summary ]
+  if _progress_popup_id is None:
+    _progress_popup_id = GetIntValue(
+      f'popup_create( { json.dumps( lines ) }, '
+      f'{ json.dumps( _PROGRESS_POPUP_OPTIONS ) } )' )
+  else:
+    vim.eval( f'popup_settext( { _progress_popup_id }, '
+              f'{ json.dumps( lines ) } )' )
+
+  _last_progress_summary = summary
+  _last_progress_update = now
+
+
+def _CloseProgressPopup():
+  global _progress_popup_id, _last_progress_summary
+  if _progress_popup_id is not None:
+    vim.eval( f'popup_close( { _progress_popup_id } )' )
+    _progress_popup_id = None
+  _last_progress_summary = None

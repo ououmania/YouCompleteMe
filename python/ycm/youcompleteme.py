@@ -39,7 +39,8 @@ from ycm.client.command_request import ( SendCommandRequest,
                                          SendCommandRequestAsync,
                                          GetCommandResponse,
                                          GetRawCommandResponse )
-from ycm.client.messages_request import GetProgressSummary
+from ycm.client.messages_request import ( GetLspProgress as LspProgress,
+                                          GetProgressSummary )
 from ycm.client.completion_request import CompletionRequest
 from ycm.client.resolve_completion_request import ResolveCompletionItem
 from ycm.client.signature_help_request import ( SignatureHelpRequest,
@@ -785,6 +786,10 @@ class YouCompleteMe:
 
   def GetWarningCount( self ):
     return self.CurrentBuffer().GetWarningCount()
+
+
+  def GetLspProgress( self ):
+    return LspProgress()
 
 
   def _PopulateLocationListWithLatestDiagnostics( self ):

@@ -3334,6 +3334,30 @@ options.
 Default: "'CursorHold'"
 
 -------------------------------------------------------------------------------
+The *g:ycm_show_lsp_progress* option
+
+This option controls how LSP progress notifications (e.g. the 'work done'
+progress reported by rust-analyzer while indexing) are displayed.
+
+Possible values are:
+
+- "'popup'": display the progress in a popup window fixed at the bottom of the
+  screen. The popup appears when progress begins, updates as it changes, and
+  disappears when it ends. This is the default.
+- "'statusline'": do not display any UI. Instead, use the
+  |youcompleteme#LspProgress()| function to read the current progress summary
+  and place it in your statusline yourself.
+- "'none'" (or any other unrecognised value): disable progress display
+  entirely.
+
+For example, to show the progress in your statusline instead of a popup:
+>
+  let g:ycm_show_lsp_progress = 'statusline'
+  set statusline=%{youcompleteme#LspProgress()}
+<
+Default: "'popup'"
+
+-------------------------------------------------------------------------------
 The *g:ycm_filter_diagnostics* option
 
 This option controls which diagnostics will be rendered by YCM. This option

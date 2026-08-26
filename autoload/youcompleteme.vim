@@ -264,6 +264,11 @@ function! youcompleteme#GetWarningCount()
 endfunction
 
 
+function! youcompleteme#LspProgress() abort
+  return py3eval( 'ycm_state.GetLspProgress()' )
+endfunction
+
+
 function! s:SetUpPython() abort
   py3 << EOF
 import os.path as p

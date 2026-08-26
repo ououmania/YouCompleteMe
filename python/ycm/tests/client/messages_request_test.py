@@ -18,15 +18,135 @@
 from ycm.tests.test_utils import MockVimModule
 MockVimModule()
 
-from hamcrest import assert_that, equal_to
+from hamcrest import assert_that, contains_string, equal_to
 from unittest import TestCase
 from unittest.mock import patch, call
 
-from ycm.client.messages_request import _HandlePollResponse
+from ycm.client.messages_request import ( _ClearProgress,
+                                          _HandleProgressNotification,
+                                          _HandlePollResponse,
+                                          GetLspProgress,
+                                          GetProgressSummary )
 from ycm.tests.test_utils import ExtendedMock
 
 
 class MessagesRequestTest( TestCase ):
+  def setUp( self ):
+    _ClearProgress()
+
+
+  def tearDown( self ):
+    _ClearProgress()
+
+
+  def test_ProgressNotification_BeginReportEnd( self ):
+    _HandleProgressNotification( {
+      'kind': 'begin',
+      'token': 'rust-analyzer/roots',
+      'title': 'Indexing',
+    } )
+    assert_that( GetProgressSummary(), equal_to( 'Indexing' ) )
+
+    _HandleProgressNotification( {
+      'kind': 'report',
+      'token': 'rust-analyzer/roots',
+      'message': 'foo',
+      'percentage': 50,
+    } )
+    assert_that( GetProgressSummary(), equal_to( 'Indexing: foo (50%)' ) )
+
+    _HandleProgressNotification( {
+      'kind': 'end',
+      'token': 'rust-analyzer/roots',
+    } )
+    assert_that( GetProgressSummary(), equal_to( None ) )
+
+
+  def test_ProgressNotification_MultipleTokens( self ):
+    _HandleProgressNotification( { 'kind': 'begin', 'token': 'a',
+                                   'title': 'A' } )
+    _HandleProgressNotification( { 'kind': 'begin', 'token': 'b',
+                                   'title': 'B' } )
+    assert_that( GetProgressSummary(), equal_to( 'A | B' ) )
+
+    _HandleProgressNotification( { 'kind': 'end', 'token': 'a' } )
+    assert_that( GetProgressSummary(), equal_to( 'B' ) )
+
+
+  def test_GetLspProgress_Idle( self ):
+    assert_that( GetLspProgress(), equal_to( '' ) )
+
+
+  def test_GetLspProgress_Active( self ):
+    _HandleProgressNotification( { 'kind': 'begin', 'token': 't',
+                                   'title': 'X' } )
+    assert_that( GetLspProgress(), equal_to( 'X' ) )
+
+
+  @patch( 'ycm.client.messages_request._GetProgressDisplayMode',
+          return_value = 'popup' )
+  @patch( 'ycm.client.messages_request.VimSupportsPopupWindows',
+          return_value = True )
+  @patch( 'ycm.client.messages_request.GetIntValue', return_value = 7 )
+  @patch( 'ycm.client.messages_request.time.time',
+          side_effect = [ 0.0, 0.20 ] )
+  @patch( 'ycm.client.messages_request.vim.eval' )
+  def test_ProgressNotification_PopupLifecycle( self, vim_eval, time_time,
+                                                get_int_value,
+                                                vim_supports_popup,
+                                                progress_mode ):
+    _HandleProgressNotification( { 'kind': 'begin', 'token': 't',
+                                   'title': 'Indexing' } )
+    get_int_value.assert_called_once()
+    vim_eval.assert_not_called()
+
+    create_args = get_int_value.call_args[ 0 ][ 0 ]
+    assert_that( create_args,
+                 contains_string( '"line": -1' ) )
+    assert_that( create_args,
+                 contains_string( '"col": 1' ) )
+    assert_that( create_args,
+                 contains_string( '"pos": "botleft"' ) )
+
+    _HandleProgressNotification( { 'kind': 'report', 'token': 't',
+                                   'message': 'foo', 'percentage': 50 } )
+    vim_eval.assert_called_once_with(
+      'popup_settext( 7, ["Indexing: foo (50%)"] )' )
+
+    _HandleProgressNotification( { 'kind': 'end', 'token': 't' } )
+    vim_eval.assert_called_with( 'popup_close( 7 )' )
+
+
+  @patch( 'ycm.client.messages_request._GetProgressDisplayMode',
+          return_value = 'popup' )
+  @patch( 'ycm.client.messages_request.VimSupportsPopupWindows',
+          return_value = True )
+  @patch( 'ycm.client.messages_request.GetIntValue', return_value = 7 )
+  @patch( 'ycm.client.messages_request.time.time',
+          side_effect = [ 0.0, 0.05, 0.20 ] )
+  @patch( 'ycm.client.messages_request.vim.eval' )
+  def test_ProgressNotification_PopupThrottle( self, vim_eval, time_time,
+                                               get_int_value,
+                                               vim_supports_popup,
+                                               progress_mode ):
+    _HandleProgressNotification( { 'kind': 'begin', 'token': 't',
+                                   'title': 'Indexing' } )
+
+    # 距上次刷新仅 0.05s，低于 0.1s 阈值，应被节流跳过（不 settext）
+    _HandleProgressNotification( { 'kind': 'report', 'token': 't',
+                                   'message': 'early' } )
+    vim_eval.assert_not_called()
+
+    # 距上次刷新 0.20s，超过阈值，应刷新
+    _HandleProgressNotification( { 'kind': 'report', 'token': 't',
+                                   'message': 'late' } )
+    vim_eval.assert_called_once_with( 'popup_settext( 7, ["Indexing: late"] )' )
+
+    # 结束，关闭浮窗，清理 popup 状态，避免泄漏到 tearDown
+    _HandleProgressNotification( { 'kind': 'end', 'token': 't' } )
+    vim_eval.assert_called_with( 'popup_close( 7 )' )
+
+
   def test_HandlePollResponse_NoMessages( self ):
     assert_that( _HandlePollResponse( True, None ), equal_to( True ) )
 
