@@ -21,6 +21,7 @@ import time
 
 import vim
 
+from ycmd.utils import ToUnicode
 from ycm.client.base_request import BaseRequest, BuildRequestData
 from ycm.vimsupport import ( GetIntValue,
                              PostVimMessage,
@@ -43,13 +44,17 @@ _progress_popup_id = None
 _last_progress_summary = None
 _last_progress_update = 0.0
 
+# 定位参数：把 popup 钉在屏幕右下角。`line`/`col` 不能用 -1（普通模式下负数
+# 仅对 textprop 有意义），改用超大值让 vim 自动 clamp 到屏幕最后一行/最后一列。
+# `pos: 'botright'` 使 `line`/`col` 指向 popup 右下角；`flip: 0` 关闭空间不足时
+# 的翻转，避免 popup 跳回上方挡住代码。
 _PROGRESS_POPUP_OPTIONS = {
-  'line': -1,
-  'col': 1,
-  'pos': 'botleft',
+  'line': 9999,
+  'col': 9999,
+  'pos': 'botright',
   'wrap': 0,
   'fixed': 1,
-  'flip': 1,
+  'flip': 0,
 }
 
 
@@ -169,7 +174,7 @@ def _HandleProgressNotification( progress ):
 
 
 def _GetProgressDisplayMode():
-  mode = vim.vars.get( 'ycm_show_lsp_progress', PROGRESS_POPUP )
+  mode = ToUnicode( vim.vars.get( 'ycm_show_lsp_progress', PROGRESS_POPUP ) )
   if mode in ( PROGRESS_POPUP, PROGRESS_STATUSLINE ):
     return mode
   return PROGRESS_NONE

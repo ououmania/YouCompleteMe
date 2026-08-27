@@ -23,6 +23,7 @@ from unittest import TestCase
 from unittest.mock import patch, call
 
 from ycm.client.messages_request import ( _ClearProgress,
+                                          _GetProgressDisplayMode,
                                           _HandleProgressNotification,
                                           _HandlePollResponse,
                                           GetLspProgress,
@@ -83,6 +84,20 @@ class MessagesRequestTest( TestCase ):
     assert_that( GetLspProgress(), equal_to( 'X' ) )
 
 
+  @patch( 'ycm.client.messages_request.vim.vars',
+          { 'ycm_show_lsp_progress': b'popup' } )
+  def test_GetProgressDisplayMode_BytesValue( self ):
+    # Vim's python3 interface returns bytes, not str. The mode must still be
+    # recognised as 'popup' (and not fall through to 'none').
+    assert_that( _GetProgressDisplayMode(), equal_to( 'popup' ) )
+
+
+  @patch( 'ycm.client.messages_request.vim.vars',
+          { 'ycm_show_lsp_progress': b'statusline' } )
+  def test_GetProgressDisplayMode_BytesStatusline( self ):
+    assert_that( _GetProgressDisplayMode(), equal_to( 'statusline' ) )
+
+
   @patch( 'ycm.client.messages_request._GetProgressDisplayMode',
           return_value = 'popup' )
   @patch( 'ycm.client.messages_request.VimSupportsPopupWindows',
@@ -102,11 +117,13 @@ class MessagesRequestTest( TestCase ):
 
     create_args = get_int_value.call_args[ 0 ][ 0 ]
     assert_that( create_args,
-                 contains_string( '"line": -1' ) )
+                 contains_string( '"line": 9999' ) )
     assert_that( create_args,
-                 contains_string( '"col": 1' ) )
+                 contains_string( '"col": 9999' ) )
     assert_that( create_args,
-                 contains_string( '"pos": "botleft"' ) )
+                 contains_string( '"pos": "botright"' ) )
+    assert_that( create_args,
+                 contains_string( '"flip": 0' ) )
 
     _HandleProgressNotification( { 'kind': 'report', 'token': 't',
                                    'message': 'foo', 'percentage': 50 } )
