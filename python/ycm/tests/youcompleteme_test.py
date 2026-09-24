@@ -27,10 +27,14 @@ MockVimModule()
 
 import vim
 
+import json
 import os
+import shutil
 import sys
-from hamcrest import ( assert_that, contains_exactly, empty, equal_to,
-                       has_entries, is_in, is_not, matches_regexp )
+import tempfile
+from pathlib import Path
+from hamcrest import ( assert_that, contains_exactly, contains_string, empty,
+                       equal_to, has_entries, is_in, is_not, matches_regexp )
 from unittest.mock import call, MagicMock, patch
 from unittest import TestCase
 
@@ -42,7 +46,19 @@ from ycm.tests import ( StopServer,
                         WaitUntilReady,
                         YouCompleteMeInstance )
 from ycm.client.base_request import _LoadExtraConfFile
-from ycm.youcompleteme import YouCompleteMe
+from ycm.youcompleteme import ( ConnectionInfo,
+                                IndividualServerPolicy,
+                                ReusableServerPolicy,
+                                SECONDARY_IDLE_SUICIDE_SECONDS,
+                                SERVER_IDLE_SUICIDE_SECONDS,
+                                YouCompleteMe,
+                                _ConnectionFilePath,
+                                _FindProjectRoot,
+                                _GetCompilationDatabaseDir,
+                                _ReadConnectionFile,
+                                _ReadProjectMarker,
+                                _RemoveConnectionFile,
+                                _WriteConnectionFile )
 from ycmd.responses import ServerError
 from ycm.tests.mock_utils import ( MockAsyncServerResponseDone,
                                    MockAsyncServerResponseInProgress,
@@ -1368,3 +1384,278 @@ class YouCompleteMeTest( TestCase ):
     current_buffer = VimBuffer( 'current_buffer' )
     with MockVimBuffers( [ current_buffer ], [ current_buffer ] ):
       assert_that( ycm.ShouldResendFileParseRequest(), equal_to( False ) )
+
+
+class CompilationDatabaseTest( TestCase ):
+  def setUp( self ):
+    self._tmp = tempfile.mkdtemp()
+
+  def tearDown( self ):
+    shutil.rmtree( self._tmp, ignore_errors = True )
+
+  def _MakeCompdb( self, rel_dir ):
+    directory = os.path.join( self._tmp, rel_dir )
+    os.makedirs( directory, exist_ok = True )
+    Path( directory, 'compile_commands.json' ).touch()
+    return directory
+
+  def _MakeMarker( self, rel_dir ):
+    directory = os.path.join( self._tmp, rel_dir )
+    os.makedirs( directory, exist_ok = True )
+    Path( directory, '.ycm_project.json' ).touch()
+    return directory
+
+  def _WriteMarker( self, rel_dir, content ):
+    directory = os.path.join( self._tmp, rel_dir )
+    os.makedirs( directory, exist_ok = True )
+    Path( directory, '.ycm_project.json' ).write_text(
+        json.dumps( content ) )
+    return directory
+
+  def test_FindProjectRoot_FromFilepath( self ):
+    project_root = self._MakeCompdb( 'proj' )
+    source = os.path.join( project_root, 'src', 'main.cpp' )
+    os.makedirs( os.path.dirname( source ), exist_ok = True )
+    Path( source ).touch()
+    assert_that( _FindProjectRoot( source ),
+                 equal_to( project_root ) )
+
+  def test_FindProjectRoot_NoneFound( self ):
+    assert_that( _FindProjectRoot( self._tmp ),
+                 equal_to( None ) )
+
+  def test_FindProjectRoot_FromMarker( self ):
+    marker_dir = self._MakeMarker( 'proj' )
+    source = os.path.join( marker_dir, 'src', 'main.cpp' )
+    os.makedirs( os.path.dirname( source ), exist_ok = True )
+    Path( source ).touch()
+    assert_that( _FindProjectRoot( source ), equal_to( marker_dir ) )
+
+  def test_ReadProjectMarker( self ):
+    directory = self._WriteMarker( 'proj', { 'compilation_database': 'build' } )
+    assert_that( _ReadProjectMarker( directory ),
+                 has_entries( compilation_database = 'build' ) )
+
+  def test_ReadProjectMarker_Missing( self ):
+    assert_that( _ReadProjectMarker( self._tmp ), equal_to( {} ) )
+
+  def test_GetCompilationDatabaseDir_RelativeDir( self ):
+    directory = self._WriteMarker( 'proj', { 'compilation_database': 'build' } )
+    os.makedirs( os.path.join( directory, 'build' ), exist_ok = True )
+    assert_that( _GetCompilationDatabaseDir( directory ),
+                 equal_to( os.path.join( directory, 'build' ) ) )
+
+  def test_GetCompilationDatabaseDir_File( self ):
+    directory = self._WriteMarker(
+        'proj', { 'compilation_database': 'build/compile_commands.json' } )
+    Path( directory, 'build' ).mkdir()
+    Path( directory, 'build', 'compile_commands.json' ).touch()
+    assert_that( _GetCompilationDatabaseDir( directory ),
+                 equal_to( os.path.join( directory, 'build' ) ) )
+
+  def test_GetCompilationDatabaseDir_None( self ):
+    assert_that( _GetCompilationDatabaseDir( self._tmp ), equal_to( '' ) )
+
+  def test_ConnectionFile_RoundTrip( self ):
+    project_root = '/proj/a'
+    info = ConnectionInfo( port = 4242, hmac_secret = b'\x01\x02',
+                           pid = 42, stdout = '/tmp/o', stderr = '/tmp/e' )
+    with patch( 'ycm.youcompleteme.CONNECTION_FILE_DIR', self._tmp ):
+      _WriteConnectionFile( project_root, info )
+      assert_that( _ReadConnectionFile( project_root ), equal_to( info ) )
+      assert_that( _ConnectionFilePath( project_root ),
+                   equal_to( os.path.join( self._tmp, 'proj_a',
+                                           'connection.json' ) ) )
+      _RemoveConnectionFile( project_root )
+      assert_that( _ReadConnectionFile( project_root ), equal_to( None ) )
+
+
+class BufferRoutingTest( TestCase ):
+  def _MakeYcm( self ):
+    ycm = YouCompleteMe.__new__( YouCompleteMe )
+    ycm._logger = MagicMock()
+    ycm._user_options = { 'reuse_max_open_files': 20,
+                          'reuse_max_memory_mb': 0,
+                          'reuse_max_project_servers': 5 }
+    return ycm
+
+  def test_OnBufferVisit_RoutesToProject( self ):
+    ycm = self._MakeYcm()
+    policy = ReusableServerPolicy()
+    with patch( 'ycm.youcompleteme._FindProjectRoot',
+                return_value = '/proj/a' ), \
+         patch.object( policy, '_EnsureProjectServer' ) as ensure, \
+         patch.object( policy, '_EvictOldOpenFiles' ), \
+         patch( 'ycm.youcompleteme.vimsupport.GetCurrentBufferFilepath',
+                return_value = '/proj/a/src/main.cpp' ):
+      policy.OnBufferVisit( ycm )
+      ensure.assert_called_once_with( ycm, '/proj/a' )
+
+  def test_OnBufferVisit_NoRouteWhenNoCompdb( self ):
+    ycm = self._MakeYcm()
+    policy = ReusableServerPolicy()
+    with patch( 'ycm.youcompleteme._FindProjectRoot',
+                return_value = None ), \
+         patch.object( policy, '_EnsureProjectServer' ) as ensure, \
+         patch( 'ycm.youcompleteme.vimsupport.GetCurrentBufferFilepath',
+                return_value = '/tmp/foo.rs' ):
+      policy.OnBufferVisit( ycm )
+      ensure.assert_not_called()
+
+
+class MultiServerTest( TestCase ):
+  def _MakeYcm( self ):
+    ycm = YouCompleteMe.__new__( YouCompleteMe )
+    ycm._logger = MagicMock()
+    ycm._reusing_server = False
+    ycm._server_popen = None
+    ycm._user_options = { 'reuse_max_open_files': 20,
+                          'reuse_max_memory_mb': 0,
+                          'reuse_max_project_servers': 5 }
+    return ycm
+
+  def test_EnsureProjectServer_ReusesKnownHealthy( self ):
+    ycm = self._MakeYcm()
+    policy = ReusableServerPolicy()
+    policy._ycmd_servers[ '/proj/a' ] = ConnectionInfo(
+        port = 1, hmac_secret = b'x', pid = 10 )
+    with patch( 'ycm.youcompleteme._CheckServerHealthy',
+                return_value = True ), \
+         patch.object( ReusableServerPolicy, '_WaitUntilServerReady' ), \
+         patch.object( ycm, '_StartServer' ) as start:
+      policy._EnsureProjectServer( ycm, '/proj/a' )
+      start.assert_not_called()
+      assert_that( ycm._reusing_server, equal_to( True ) )
+
+  def test_EnsureProjectServer_StartsWhenMissing( self ):
+    ycm = self._MakeYcm()
+    policy = ReusableServerPolicy()
+    conn = ConnectionInfo( port = 2, hmac_secret = b'y', pid = 20 )
+    with patch( 'ycm.youcompleteme._ReadConnectionFile',
+                return_value = None ), \
+         patch.object( ReusableServerPolicy, '_WaitUntilServerReady' ), \
+         patch.object( ycm, '_StartServer', return_value = conn ) as start:
+      policy._EnsureProjectServer( ycm, '/proj/b' )
+      start.assert_called_once()
+      assert_that( policy._ycmd_servers[ '/proj/b' ], equal_to( conn ) )
+
+  def test_EnsureProjectServer_SoftEvictsWhenOverCap( self ):
+    ycm = self._MakeYcm()
+    policy = ReusableServerPolicy()
+    for i in range( 5 ):
+      policy._ycmd_servers[ f'/proj/{ i }' ] = ConnectionInfo(
+          port = 10 + i, hmac_secret = b'z', pid = 30 + i )
+    policy._open_files_lru = { f'/proj/{ i }': [ f'/proj/{ i }/f.cc' ]
+                               for i in range( 5 ) }
+    conn = ConnectionInfo( port = 99, hmac_secret = b'w', pid = 99 )
+    with patch( 'ycm.youcompleteme._ReadConnectionFile',
+                return_value = None ), \
+         patch.object( ReusableServerPolicy, '_WaitUntilServerReady' ), \
+         patch.object( ycm, '_StartServer', return_value = conn ), \
+         patch( 'ycm.youcompleteme._RemoveConnectionFile' ) as remove:
+      policy._EnsureProjectServer( ycm, '/proj/new' )
+      remove.assert_called_once()
+      assert_that( len( policy._ycmd_servers ), equal_to( 5 ) )
+
+  def test_EnsureProjectServer_FirstProjectGetsLongIdleSuicide( self ):
+    ycm = self._MakeYcm()
+    policy = ReusableServerPolicy()
+    conn = ConnectionInfo( port = 3, hmac_secret = b'x', pid = 3 )
+    with patch( 'ycm.youcompleteme._ReadConnectionFile',
+                return_value = None ), \
+         patch.object( ReusableServerPolicy, '_WaitUntilServerReady' ), \
+         patch.object( ycm, '_StartServer', return_value = conn ) as start:
+      policy._EnsureProjectServer( ycm, '/proj/a' )
+      first = start.call_args[ 0 ][ 1 ]
+      policy._EnsureProjectServer( ycm, '/proj/b' )
+      second = start.call_args[ 0 ][ 1 ]
+    assert_that( first, equal_to( SERVER_IDLE_SUICIDE_SECONDS ) )
+    assert_that( second, equal_to( SECONDARY_IDLE_SUICIDE_SECONDS ) )
+
+  def test_OnVimLeave_ShutsDownFallbackWhenNoProject( self ):
+    ycm = self._MakeYcm()
+    policy = ReusableServerPolicy()  # _active_project_root is None
+    with patch.object( ycm, '_ShutdownServer' ) as shutdown:
+      policy.OnVimLeave( ycm )
+      shutdown.assert_called_once()
+
+  def test_OnVimLeave_KeepsProjectServers( self ):
+    ycm = self._MakeYcm()
+    policy = ReusableServerPolicy()
+    policy._active_project_root = '/proj/a'
+    with patch.object( ycm, '_ShutdownServer' ) as shutdown:
+      policy.OnVimLeave( ycm )
+      shutdown.assert_not_called()
+
+  def test_EnsureProjectServer_WaitsForServerReady( self ):
+    ycm = self._MakeYcm()
+    ycm._server_is_ready_with_cache = True
+    policy = ReusableServerPolicy()
+    conn = ConnectionInfo( port = 4, hmac_secret = b'x', pid = 4 )
+    with patch( 'ycm.youcompleteme._ReadConnectionFile',
+                return_value = None ), \
+         patch.object( ycm, '_StartServer', return_value = conn ), \
+         patch.object( ReusableServerPolicy,
+                       '_WaitUntilServerReady' ) as wait:
+      policy._EnsureProjectServer( ycm, '/proj/a' )
+      wait.assert_called_once_with( ycm )
+      assert_that( ycm._server_is_ready_with_cache, equal_to( False ) )
+
+
+class IndividualServerPolicyTest( TestCase ):
+  def _MakeYcm( self ):
+    ycm = YouCompleteMe.__new__( YouCompleteMe )
+    ycm._logger = MagicMock()
+    ycm._user_options = { 'reuse_max_open_files': 20,
+                          'reuse_max_memory_mb': 0 }
+    return ycm
+
+  def test_OnBufferVisit_TracksFile( self ):
+    ycm = self._MakeYcm()
+    policy = IndividualServerPolicy()
+    with patch( 'ycm.youcompleteme.vimsupport.GetCurrentBufferFilepath',
+                return_value = '/tmp/a.cc' ), \
+         patch( 'ycm.youcompleteme._EvictOpenFiles' ) as evict:
+      policy.OnBufferVisit( ycm )
+      assert_that( policy._open_files_lru, contains_exactly( '/tmp/a.cc' ) )
+      evict.assert_called_once_with( ycm, [ '/tmp/a.cc' ] )
+
+
+class DebugInfoSubcommandTest( TestCase ):
+  def _MakeYcm( self, policy ):
+    ycm = YouCompleteMe.__new__( YouCompleteMe )
+    ycm._server_policy = policy
+    ycm._client_logfile = None
+    ycm._server_popen = None
+    ycm._server_stdout = None
+    ycm._server_stderr = None
+    ycm._user_options = { 'reuse_max_project_servers': 5 }
+    return ycm
+
+  def test_DebugInfo_Projects( self ):
+    policy = ReusableServerPolicy()
+    policy._active_project_root = '/proj/a'
+    policy._ycmd_servers = {
+        '/proj/a': ConnectionInfo( port = 1, hmac_secret = b'x', pid = 10 ),
+        '/proj/b': ConnectionInfo( port = 2, hmac_secret = b'y', pid = 20 ),
+    }
+    policy._open_files_lru = { '/proj/a': [ '/proj/a/f.cc' ],
+                               '/proj/b': [] }
+    ycm = self._MakeYcm( policy )
+    result = ycm.DebugInfo( 'projects' )
+    assert_that( result, contains_string( '[active]' ) )
+    assert_that( result, contains_string( 'port=1' ) )
+    assert_that( result, contains_string( 'files=1' ) )
+
+  def test_DebugInfo_FileLru_Individual( self ):
+    policy = IndividualServerPolicy()
+    policy._open_files_lru = [ '/tmp/a.cc', '/tmp/b.cc' ]
+    ycm = self._MakeYcm( policy )
+    result = ycm.DebugInfo( 'file-lru' )
+    assert_that( result, contains_string( '/tmp/a.cc' ) )
+    assert_that( result, contains_string( '/tmp/b.cc' ) )
+
+  def test_DebugInfo_UnknownSubcommand( self ):
+    ycm = self._MakeYcm( IndividualServerPolicy() )
+    result = ycm.DebugInfo( 'bogus' )
+    assert_that( result, contains_string( 'Unknown' ) )

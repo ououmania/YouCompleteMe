@@ -210,6 +210,9 @@ let g:ycm_reuse_max_open_files =
 let g:ycm_reuse_max_memory_mb =
       \ get( g:, 'ycm_reuse_max_memory_mb', 0 )
 
+let g:ycm_reuse_max_project_servers =
+      \ get( g:, 'ycm_reuse_max_project_servers', 5 )
+
 "
 " List of ycmd options.
 "

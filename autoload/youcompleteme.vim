@@ -1400,7 +1400,8 @@ endfunction
 
 function! s:SetUpCommands()
   command! YcmRestartServer call s:RestartServer()
-  command! YcmDebugInfo call s:DebugInfo()
+  command! -nargs=? -complete=custom,youcompleteme#DebugInfoComplete
+        \ YcmDebugInfo call s:DebugInfo( <q-args> )
   command! -nargs=* -complete=custom,youcompleteme#LogsComplete -count=0
         \ YcmToggleLogs call s:ToggleLogs( <f-count>,
                                          \ <f-mods>,
@@ -1435,13 +1436,15 @@ function! s:RestartServer()
 endfunction
 
 
-function! s:DebugInfo()
+function! s:DebugInfo( subcommand )
   echom "Printing YouCompleteMe debug information..."
-  let debug_info = py3eval( 'ycm_state.DebugInfo()' )
-  echom '-- Resolve completions:'
-        \ ( s:resolve_completions == s:RESOLVE_ON_DEMAND ? 'On demand' :
-        \      s:resolve_completions == s:RESOLVE_UP_FRONT ? 'Up front' :
-        \       'Never' )
+  let debug_info = py3eval( 'ycm_state.DebugInfo( vim.eval( "a:subcommand" ) )' )
+  if empty( a:subcommand )
+    echom '-- Resolve completions:'
+          \ ( s:resolve_completions == s:RESOLVE_ON_DEMAND ? 'On demand' :
+          \      s:resolve_completions == s:RESOLVE_UP_FRONT ? 'Up front' :
+          \       'Never' )
+  endif
   for line in split( debug_info, "\n" )
     echom '-- ' . line
   endfor
@@ -1588,6 +1591,11 @@ endfunction
 
 function! youcompleteme#SubCommandsComplete( arglead, cmdline, cursorpos )
   return join( py3eval( 'ycm_state.GetDefinedSubcommands()' ), "\n" )
+endfunction
+
+
+function! youcompleteme#DebugInfoComplete( arglead, cmdline, cursorpos )
+  return join( [ 'projects', 'file-lru' ], "\n" )
 endfunction
 
 
