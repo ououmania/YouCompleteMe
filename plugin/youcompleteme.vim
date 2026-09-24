@@ -201,6 +201,15 @@ let g:ycm_show_lsp_progress =
 let g:ycm_update_diagnostics_in_insert_mode =
       \ get( g:, 'ycm_update_diagnostics_in_insert_mode', 1 )
 
+let g:ycm_reuse_project_ycmd_server =
+      \ get( g:, 'ycm_reuse_project_ycmd_server', 0 )
+
+let g:ycm_reuse_max_open_files =
+      \ get( g:, 'ycm_reuse_max_open_files', 20 )
+
+let g:ycm_reuse_max_memory_mb =
+      \ get( g:, 'ycm_reuse_max_memory_mb', 0 )
+
 "
 " List of ycmd options.
 "

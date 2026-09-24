@@ -16,13 +16,16 @@
 # along with YouCompleteMe.  If not, see <http://www.gnu.org/licenses/>.
 
 import base64
+import hashlib
 import json
 import logging
 import os
+import re
 import select
 import signal
 import time
 import vim
+from dataclasses import dataclass, asdict
 from subprocess import PIPE
 from tempfile import NamedTemporaryFile
 from ycm import base, paths, signature_help, vimsupport
@@ -101,6 +104,105 @@ SERVER_LOGFILE_FORMAT = 'ycmd_{port}_{std}_'
 # https://msdn.microsoft.com/en-us/library/ms724935.aspx
 HANDLE_FLAG_INHERIT = 0x00000001
 
+CONNECTION_FILE_DIR = os.path.join( os.path.expanduser( '~' ),
+                                    '.cache', 'ycmd' )
+
+
+@dataclass
+class ConnectionInfo:
+  port: int
+  hmac_secret: bytes
+  pid: int
+  stdout: str = None
+  stderr: str = None
+
+
+def _FindCompilationDatabaseDir():
+  directory = os.path.realpath( os.getcwd() )
+  while True:
+    if os.path.isfile( os.path.join( directory, 'compile_commands.json' ) ):
+      return directory
+    parent = os.path.dirname( directory )
+    if parent == directory:
+      return None
+    directory = parent
+
+
+def _ProjectDirName():
+  base = _FindCompilationDatabaseDir() or os.path.realpath( os.getcwd() )
+  return re.sub( r'[^A-Za-z0-9_]', '_', base.lstrip( '/' ) )
+
+
+def _ConnectionFilePath():
+  return os.path.join( CONNECTION_FILE_DIR, _ProjectDirName(),
+                       'connection.json' )
+
+
+def _ReadConnectionFile():
+  filepath = _ConnectionFilePath()
+  try:
+    with open( filepath ) as f:
+      data = json.load( f )
+    data[ 'hmac_secret' ] = base64.b64decode( data[ 'hmac_secret' ] )
+    return ConnectionInfo( **data )
+  except ( OSError, KeyError, ValueError, TypeError ):
+    return None
+
+
+def _WriteConnectionFile( info ):
+  filepath = _ConnectionFilePath()
+  os.makedirs( os.path.dirname( filepath ), exist_ok = True )
+  data = asdict( info )
+  data[ 'hmac_secret' ] = utils.ToUnicode(
+    base64.b64encode( data[ 'hmac_secret' ] ) )
+  with open( filepath, 'w' ) as f:
+    json.dump( data, f )
+
+
+def _RemoveConnectionFile():
+  filepath = _ConnectionFilePath()
+  try:
+    os.remove( filepath )
+  except OSError:
+    pass
+
+
+def _CheckServerHealthy( server_location, hmac_secret ):
+  try:
+    from ycm.client.base_request import BaseRequest
+    saved_location = BaseRequest.server_location
+    saved_secret = BaseRequest.hmac_secret
+    BaseRequest.server_location = server_location
+    BaseRequest.hmac_secret = hmac_secret
+    try:
+      response = BaseRequest().GetDataFromHandler( 'healthy',
+                                                    display_message = False )
+      return bool( response )
+    finally:
+      BaseRequest.server_location = saved_location
+      BaseRequest.hmac_secret = saved_secret
+  except Exception:
+    return False
+
+
+def _GetChildProcessRssMb( parent_pid ):
+  try:
+    children_dir = f'/proc/{ parent_pid }/task/{ parent_pid }/children'
+    with open( children_dir ) as f:
+      child_pids = f.read().split()
+    total_rss = 0
+    page_size = os.sysconf( 'SC_PAGE_SIZE' )
+    for pid in child_pids:
+      try:
+        with open( f'/proc/{ pid }/statm' ) as f:
+          rss_pages = int( f.read().split()[ 1 ] )
+        total_rss += rss_pages * page_size
+      except ( OSError, IndexError, ValueError ):
+        pass
+    return total_rss // ( 1024 * 1024 )
+  except OSError:
+    return 0
+
 
 class YouCompleteMe:
   def __init__( self, default_options = {} ):
@@ -109,6 +211,9 @@ class YouCompleteMe:
     self._server_stdout = None
     self._server_stderr = None
     self._server_popen = None
+    self._reusing_server = False
+    self._reuse_project = False
+    self._open_files_lru = []
     self._default_options = default_options
     self._ycmd_keepalive = YcmdKeepalive()
     self._SetUpLogging()
@@ -188,12 +293,32 @@ class YouCompleteMe:
 
     self._SetLogLevel()
 
+    self._reusing_server = False
+    self._reuse_project = (
+        self._user_options.get( 'reuse_project_ycmd_server' )
+        and _FindCompilationDatabaseDir() is not None )
+    if self._reuse_project:
+      conn = _ReadConnectionFile()
+      if conn:
+        location = f'http://127.0.0.1:{ conn.port }'
+        if _CheckServerHealthy( location, conn.hmac_secret ):
+          BaseRequest.server_location = location
+          BaseRequest.hmac_secret = conn.hmac_secret
+          self._server_popen = None
+          self._server_stdout = conn.stdout
+          self._server_stderr = conn.stderr
+          self._reusing_server = True
+          self._logger.info( 'Reusing existing ycmd server on port %d '
+                             '(pid %d)', conn.port, conn.pid )
+          return
+
     hmac_secret = os.urandom( HMAC_SECRET_LENGTH )
     options_dict = dict( self._user_options )
     options_dict[ 'hmac_secret' ] = utils.ToUnicode(
       base64.b64encode( hmac_secret ) )
-    options_dict[ 'server_keep_logfiles' ] = self._user_options[
-      'keep_logfiles' ]
+    options_dict[ 'server_keep_logfiles' ] = (
+        self._user_options[ 'keep_logfiles' ]
+        or self._reuse_project )
 
     # The temp options file is deleted by ycmd during startup.
     with NamedTemporaryFile( delete = False, mode = 'w+' ) as options_file:
@@ -222,18 +347,35 @@ class YouCompleteMe:
              f'--log={ self._user_options[ "log_level" ] }',
              f'--idle_suicide_seconds={ SERVER_IDLE_SUICIDE_SECONDS }' ]
 
-    self._server_stdout = utils.CreateLogfile(
-        SERVER_LOGFILE_FORMAT.format( port = server_port, std = 'stdout' ) )
-    self._server_stderr = utils.CreateLogfile(
-        SERVER_LOGFILE_FORMAT.format( port = server_port, std = 'stderr' ) )
+    if self._reuse_project:
+      log_dir = os.path.dirname( _ConnectionFilePath() )
+      os.makedirs( log_dir, exist_ok = True )
+      self._server_stdout = os.path.join(
+        log_dir, f'ycmd_{ server_port }_stdout.log' )
+      self._server_stderr = os.path.join(
+        log_dir, f'ycmd_{ server_port }_stderr.log' )
+    else:
+      self._server_stdout = utils.CreateLogfile(
+          SERVER_LOGFILE_FORMAT.format( port = server_port, std = 'stdout' ) )
+      self._server_stderr = utils.CreateLogfile(
+          SERVER_LOGFILE_FORMAT.format( port = server_port, std = 'stderr' ) )
     args.append( f'--stdout={ self._server_stdout }' )
     args.append( f'--stderr={ self._server_stderr }' )
 
-    if self._user_options[ 'keep_logfiles' ]:
+    if ( self._user_options[ 'keep_logfiles' ]
+         or self._reuse_project ):
       args.append( '--keep_logfiles' )
 
     self._server_popen = utils.SafePopen( args, stdin_windows = PIPE,
                                           stdout = PIPE, stderr = PIPE )
+
+    if self._reuse_project:
+      _WriteConnectionFile( ConnectionInfo(
+        port = server_port,
+        hmac_secret = hmac_secret,
+        pid = self._server_popen.pid,
+        stdout = self._server_stdout,
+        stderr = self._server_stderr ) )
 
 
   def _SetUpLogging( self ):
@@ -277,6 +419,9 @@ class YouCompleteMe:
 
 
   def IsServerAlive( self ):
+    if self._reusing_server:
+      return _CheckServerHealthy( BaseRequest.server_location,
+                                  BaseRequest.hmac_secret )
     # When the process hasn't finished yet, poll() returns None.
     return bool( self._server_popen ) and self._server_popen.poll() is None
 
@@ -293,6 +438,13 @@ class YouCompleteMe:
 
 
   def NotifyUserIfServerCrashed( self ):
+    if self._reusing_server:
+      if not self._user_notified_about_crash and not self.IsServerAlive():
+        self._user_notified_about_crash = True
+        error_message = SERVER_SHUTDOWN_MESSAGE
+        self._logger.error( error_message )
+        vimsupport.PostVimMessage( error_message )
+      return
     if ( not self._server_popen or self._user_notified_about_crash or
          self.IsServerAlive() ):
       return
@@ -322,6 +474,9 @@ class YouCompleteMe:
 
 
   def ServerPid( self ):
+    if self._reusing_server:
+      conn = _ReadConnectionFile()
+      return conn.pid if conn else -1
     if not self._server_popen:
       return -1
     return self._server_popen.pid
@@ -333,7 +488,9 @@ class YouCompleteMe:
 
   def RestartServer( self ):
     vimsupport.PostVimMessage( 'Restarting ycmd server...' )
-    self._ShutdownServer()
+    SendShutdownRequest()
+    _RemoveConnectionFile()
+    self._reusing_server = False
     self._SetUpServer()
 
 
@@ -683,7 +840,43 @@ class YouCompleteMe:
 
 
   def OnBufferUnload( self, deleted_buffer_number ):
+    if self._reuse_project:
+      try:
+        filepath = vim.buffers[ deleted_buffer_number ].name
+        if filepath in self._open_files_lru:
+          self._open_files_lru.remove( filepath )
+      except ( KeyError, ValueError ):
+        pass
+      return
     SendEventNotificationAsync( 'BufferUnload', deleted_buffer_number )
+
+
+  def _EvictOldOpenFiles( self ):
+    max_files = self._user_options.get( 'reuse_max_open_files', 20 )
+    max_memory = self._user_options.get( 'reuse_max_memory_mb', 0 )
+
+    def _ShouldEvict():
+      if len( self._open_files_lru ) <= 1:
+        return False
+      if len( self._open_files_lru ) > max_files:
+        return True
+      if max_memory > 0:
+        ycmd_pid = self.ServerPid()
+        if ycmd_pid > 0:
+          rss = _GetChildProcessRssMb( ycmd_pid )
+          if rss > max_memory:
+            self._logger.debug( 'Child process RSS %d MB > limit %d MB',
+                                rss, max_memory )
+            return True
+      return False
+
+    while _ShouldEvict():
+      evicted = self._open_files_lru.pop( 0 )
+      self._logger.debug( 'LRU evicting %s from open files', evicted )
+      request_data = BuildRequestData()
+      request_data[ 'filepath' ] = evicted
+      request_data[ 'event_name' ] = 'BufferUnload'
+      BaseRequest().PostDataToHandler( request_data, 'event_notification' )
 
 
   def UpdateMatches( self ):
@@ -706,6 +899,13 @@ class YouCompleteMe:
     extra_data = {}
     self._AddUltiSnipsDataIfNeeded( extra_data )
     SendEventNotificationAsync( 'BufferVisit', extra_data = extra_data )
+
+    if self._reuse_project:
+      filepath = vimsupport.GetCurrentBufferFilepath()
+      if filepath in self._open_files_lru:
+        self._open_files_lru.remove( filepath )
+      self._open_files_lru.append( filepath )
+      self._EvictOldOpenFiles()
 
 
   def CurrentBuffer( self ):
@@ -742,7 +942,8 @@ class YouCompleteMe:
 
 
   def OnVimLeave( self ):
-    self._ShutdownServer()
+    if not self._reuse_project:
+      self._ShutdownServer()
     self._CleanLogfile()
 
 
@@ -882,7 +1083,8 @@ class YouCompleteMe:
 
     logfiles = {}
     for logfile in logfiles_list:
-      logfiles[ os.path.basename( logfile ) ] = logfile
+      if logfile:
+        logfiles[ os.path.basename( logfile ) ] = logfile
     return logfiles
 
 

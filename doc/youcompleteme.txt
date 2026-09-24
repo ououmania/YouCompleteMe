@@ -192,11 +192,14 @@ Contents ~
    59. The |g:ycm_signature_help_disable_syntax| option
    60. The |g:ycm_gopls_binary_path| option
    61. The |g:ycm_gopls_args| option
-   62. The |g:ycm_rls_binary_path| and 'g:ycm_rustc_binary_path' options
-   63. The |g:ycm_rust_toolchain_root| option
-   64. The |g:ycm_tsserver_binary_path| option
-   65. The |g:ycm_roslyn_binary_path| option
-   66. The |g:ycm_update_diagnostics_in_insert_mode| option
+   62. The |g:ycm_reuse_project_ycmd_server| option
+   63. The |g:ycm_reuse_max_open_files| option
+   64. The |g:ycm_reuse_max_memory_mb| option
+   65. The |g:ycm_rls_binary_path| and 'g:ycm_rustc_binary_path' options
+   66. The |g:ycm_rust_toolchain_root| option
+   67. The |g:ycm_tsserver_binary_path| option
+   68. The |g:ycm_roslyn_binary_path| option
+   69. The |g:ycm_update_diagnostics_in_insert_mode| option
   12. FAQ                                                   |youcompleteme-faq|
   13. Contributor Code of Conduct   |youcompleteme-contributor-code-of-conduct|
   14. Contact                                           |youcompleteme-contact|
@@ -4068,6 +4071,44 @@ Default: '[]'
   let g:ycm_gopls_args = []
 <
 -------------------------------------------------------------------------------
+The *g:ycm_reuse_project_ycmd_server* option
+
+When enabled, YCM reuses the ycmd server across Vim sessions for projects that
+have a compilation database ('compile_commands.json'). The server is identified
+by the compilation database directory and is not shut down when Vim exits; the
+next Vim instance opened for the same project reconnects to it.
+
+Without a compilation database (for example a directory of loose files), this
+option has no effect and the server is shut down on exit as usual.
+
+Default: '0'
+>
+  let g:ycm_reuse_project_ycmd_server = 1
+<
+------------------------------------------------------------------------------
+The *g:ycm_reuse_max_open_files* option
+
+When |g:ycm_reuse_project_ycmd_server| is enabled, YCM tracks the recently
+visited files of the reused server and evicts the least recently used ones
+once this many files have been opened.
+
+Default: '20'
+>
+  let g:ycm_reuse_max_open_files = 20
+<
+------------------------------------------------------------------------------
+The *g:ycm_reuse_max_memory_mb* option
+
+When |g:ycm_reuse_project_ycmd_server| is enabled, YCM evicts the least
+recently used open files from the reused server when its child process (for
+example clangd) exceeds this memory limit, in MB. Set to '0' to disable the
+memory-based eviction.
+
+Default: '0'
+>
+  let g:ycm_reuse_max_memory_mb = 0
+<
+------------------------------------------------------------------------------
 The *g:ycm_rls_binary_path* and 'g:ycm_rustc_binary_path' options
 
 YCM no longer uses RLS for rust, and these options are therefore no longer
