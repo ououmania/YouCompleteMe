@@ -218,25 +218,6 @@ def _CheckServerHealthy( server_location, hmac_secret ):
     return False
 
 
-def _GetChildProcessRssMb( parent_pid ):
-  try:
-    children_dir = f'/proc/{ parent_pid }/task/{ parent_pid }/children'
-    with open( children_dir ) as f:
-      child_pids = f.read().split()
-    total_rss = 0
-    page_size = os.sysconf( 'SC_PAGE_SIZE' )
-    for pid in child_pids:
-      try:
-        with open( f'/proc/{ pid }/statm' ) as f:
-          rss_pages = int( f.read().split()[ 1 ] )
-        total_rss += rss_pages * page_size
-      except ( OSError, IndexError, ValueError ):
-        pass
-    return total_rss // ( 1024 * 1024 )
-  except OSError:
-    return 0
-
-
 class ServerPolicy:
   def OnServerSetup( self, ycm ):
     raise NotImplementedError
@@ -245,7 +226,7 @@ class ServerPolicy:
     pass
 
   def OnBufferUnload( self, ycm, deleted_buffer_number ):
-    raise NotImplementedError
+    pass
 
   def OnVimLeave( self, ycm ):
     raise NotImplementedError
@@ -258,26 +239,8 @@ class ServerPolicy:
 
 
 class IndividualServerPolicy( ServerPolicy ):
-  def __init__( self ):
-    self._open_files_lru = []
-
   def OnServerSetup( self, ycm ):
     ycm._StartServer( None )
-
-  def OnBufferVisit( self, ycm ):
-    filepath = vimsupport.GetCurrentBufferFilepath()
-    if filepath in self._open_files_lru:
-      self._open_files_lru.remove( filepath )
-    self._open_files_lru.append( filepath )
-    _EvictOpenFiles( ycm, self._open_files_lru )
-
-  def OnBufferUnload( self, ycm, deleted_buffer_number ):
-    try:
-      filepath = vim.buffers[ deleted_buffer_number ].name
-      if filepath in self._open_files_lru:
-        self._open_files_lru.remove( filepath )
-    except ( KeyError, ValueError ):
-      pass
 
   def OnVimLeave( self, ycm ):
     ycm._ShutdownServer()
@@ -318,7 +281,6 @@ class ReusableServerPolicy( ServerPolicy ):
     if filepath in lru:
       lru.remove( filepath )
     lru.append( filepath )
-    self._EvictOldOpenFiles( ycm, project_root )
 
   def OnBufferUnload( self, ycm, deleted_buffer_number ):
     try:
@@ -416,37 +378,6 @@ class ReusableServerPolicy( ServerPolicy ):
     self._open_files_lru.pop( victim, None )
     _RemoveConnectionFile( victim )
     ycm._logger.info( 'Soft-evicting ycmd server for project %s', victim )
-
-  def _EvictOldOpenFiles( self, ycm, project_root ):
-    _EvictOpenFiles( ycm, self._open_files_lru[ project_root ] )
-
-
-def _EvictOpenFiles( ycm, lru ):
-  max_files = ycm._user_options.get( 'reuse_max_open_files', 20 )
-  max_memory = ycm._user_options.get( 'reuse_max_memory_mb', 0 )
-
-  def _ShouldEvict():
-    if len( lru ) <= 1:
-      return False
-    if len( lru ) > max_files:
-      return True
-    if max_memory > 0:
-      ycmd_pid = ycm.ServerPid()
-      if ycmd_pid > 0:
-        rss = _GetChildProcessRssMb( ycmd_pid )
-        if rss > max_memory:
-          ycm._logger.info( 'Child process RSS %d MB > limit %d MB',
-                            rss, max_memory )
-          return True
-    return False
-
-  while _ShouldEvict():
-    evicted = lru.pop( 0 )
-    ycm._logger.info( 'LRU evicting %s from open files', evicted )
-    request_data = BuildRequestData()
-    request_data[ 'filepath' ] = evicted
-    request_data[ 'event_name' ] = 'BufferUnload'
-    BaseRequest().PostDataToHandler( request_data, 'event_notification' )
 
 
 class YouCompleteMe:
@@ -1266,10 +1197,12 @@ class YouCompleteMe:
   def _DebugInfoSubcommand( self, subcommand ):
     if subcommand == 'projects':
       return self._FormatProjectsInfo()
-    if subcommand == 'file-lru':
-      return self._FormatLruInfo()
+    if subcommand == 'ycm-file-mru':
+      return self._FormatYcmFileMru()
+    if subcommand == 'ycmd-file-mru':
+      return self._FormatYcmdFileMru()
     return ( f'Unknown YcmDebugInfo subcommand: { subcommand }\n'
-             'Available: projects, file-lru\n' )
+             'Available: projects, ycm-file-mru, ycmd-file-mru\n' )
 
 
   def _FormatProjectsInfo( self ):
@@ -1287,21 +1220,43 @@ class YouCompleteMe:
     return '\n'.join( lines ) + '\n'
 
 
-  def _FormatLruInfo( self ):
+  def _FormatYcmFileMru( self ):
     policy = self._server_policy
-    if isinstance( policy, IndividualServerPolicy ):
-      lines = [ f'Open files ( { len( policy._open_files_lru ) } ):' ]
-      for filepath in policy._open_files_lru:
+    if not isinstance( policy, ReusableServerPolicy ):
+      return 'No per-project file MRU (individual policy)\n'
+    if not policy._open_files_lru:
+      return 'No files tracked on the YCM side\n'
+    lines = []
+    for project_root, lru in policy._open_files_lru.items():
+      lines.append( f'{ project_root } ( { len( lru ) } files, MRU first ):' )
+      for filepath in reversed( lru ):
         lines.append( f'  - { filepath }' )
-      return '\n'.join( lines ) + '\n'
-    if isinstance( policy, ReusableServerPolicy ):
-      lines = []
-      for project_root, lru in policy._open_files_lru.items():
-        lines.append( f'{ project_root } ( { len( lru ) } files ):' )
-        for filepath in lru:
-          lines.append( f'  - { filepath }' )
-      return '\n'.join( lines ) + '\n'
-    return 'No open-files state\n'
+    return '\n'.join( lines ) + '\n'
+
+
+  def _FormatYcmdFileMru( self ):
+    extra_data = {}
+    self._AddExtraConfDataIfNeeded( extra_data )
+    response = SendDebugInfoRequest( extra_data )
+    if not response or not response.get( 'completer' ):
+      return 'No debug info from ycmd server\n'
+    lines = []
+    for server in response[ 'completer' ].get( 'servers', [] ):
+      files = self._OpenFilesFromServer( server )
+      if files is None:
+        continue
+      name = server[ 'name' ]
+      lines.append( f'{ name } ( { len( files ) } files, MRU first ):' )
+      for filepath in files:
+        lines.append( f'  - { filepath }' )
+    if not lines:
+      return 'No open-file state reported by ycmd\n'
+    return '\n'.join( lines ) + '\n'
+
+
+  @staticmethod
+  def _OpenFilesFromServer( server ):
+    return server.get( 'open_files' )
 
 
   def GetLogfiles( self ):

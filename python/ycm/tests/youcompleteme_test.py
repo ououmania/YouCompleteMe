@@ -1474,9 +1474,7 @@ class BufferRoutingTest( TestCase ):
   def _MakeYcm( self ):
     ycm = YouCompleteMe.__new__( YouCompleteMe )
     ycm._logger = MagicMock()
-    ycm._user_options = { 'reuse_max_open_files': 20,
-                          'reuse_max_memory_mb': 0,
-                          'reuse_max_project_servers': 5 }
+    ycm._user_options = { 'reuse_max_project_servers': 5 }
     return ycm
 
   def test_OnBufferVisit_RoutesToProject( self ):
@@ -1485,7 +1483,6 @@ class BufferRoutingTest( TestCase ):
     with patch( 'ycm.youcompleteme._FindProjectRoot',
                 return_value = '/proj/a' ), \
          patch.object( policy, '_EnsureProjectServer' ) as ensure, \
-         patch.object( policy, '_EvictOldOpenFiles' ), \
          patch( 'ycm.youcompleteme.vimsupport.GetCurrentBufferFilepath',
                 return_value = '/proj/a/src/main.cpp' ):
       policy.OnBufferVisit( ycm )
@@ -1509,9 +1506,7 @@ class MultiServerTest( TestCase ):
     ycm._logger = MagicMock()
     ycm._reusing_server = False
     ycm._server_popen = None
-    ycm._user_options = { 'reuse_max_open_files': 20,
-                          'reuse_max_memory_mb': 0,
-                          'reuse_max_project_servers': 5 }
+    ycm._user_options = { 'reuse_max_project_servers': 5 }
     return ycm
 
   def test_EnsureProjectServer_ReusesKnownHealthy( self ):
@@ -1602,25 +1597,6 @@ class MultiServerTest( TestCase ):
       assert_that( ycm._server_is_ready_with_cache, equal_to( False ) )
 
 
-class IndividualServerPolicyTest( TestCase ):
-  def _MakeYcm( self ):
-    ycm = YouCompleteMe.__new__( YouCompleteMe )
-    ycm._logger = MagicMock()
-    ycm._user_options = { 'reuse_max_open_files': 20,
-                          'reuse_max_memory_mb': 0 }
-    return ycm
-
-  def test_OnBufferVisit_TracksFile( self ):
-    ycm = self._MakeYcm()
-    policy = IndividualServerPolicy()
-    with patch( 'ycm.youcompleteme.vimsupport.GetCurrentBufferFilepath',
-                return_value = '/tmp/a.cc' ), \
-         patch( 'ycm.youcompleteme._EvictOpenFiles' ) as evict:
-      policy.OnBufferVisit( ycm )
-      assert_that( policy._open_files_lru, contains_exactly( '/tmp/a.cc' ) )
-      evict.assert_called_once_with( ycm, [ '/tmp/a.cc' ] )
-
-
 class DebugInfoSubcommandTest( TestCase ):
   def _MakeYcm( self, policy ):
     ycm = YouCompleteMe.__new__( YouCompleteMe )
@@ -1647,13 +1623,33 @@ class DebugInfoSubcommandTest( TestCase ):
     assert_that( result, contains_string( 'port=1' ) )
     assert_that( result, contains_string( 'files=1' ) )
 
-  def test_DebugInfo_FileLru_Individual( self ):
-    policy = IndividualServerPolicy()
-    policy._open_files_lru = [ '/tmp/a.cc', '/tmp/b.cc' ]
+  def test_DebugInfo_YcmFileMru( self ):
+    policy = ReusableServerPolicy()
+    policy._open_files_lru = { '/proj/a': [ '/proj/a/f.cc',
+                                            '/proj/a/g.cc' ] }
     ycm = self._MakeYcm( policy )
-    result = ycm.DebugInfo( 'file-lru' )
-    assert_that( result, contains_string( '/tmp/a.cc' ) )
-    assert_that( result, contains_string( '/tmp/b.cc' ) )
+    result = ycm.DebugInfo( 'ycm-file-mru' )
+    assert_that( result, contains_string( '/proj/a/f.cc' ) )
+    assert_that( result, contains_string( '/proj/a/g.cc' ) )
+
+  def test_DebugInfo_YcmdFileMru( self ):
+    policy = ReusableServerPolicy()
+    ycm = self._MakeYcm( policy )
+    with patch.object( ycm, '_AddExtraConfDataIfNeeded' ), \
+         patch( 'ycm.youcompleteme.SendDebugInfoRequest',
+                return_value = {
+                  'completer': {
+                    'servers': [ {
+                      'name': 'Clangd',
+                      'open_files': [ '/proj/a/f.cc',
+                                      '/proj/a/g.cc' ],
+                    } ],
+                  },
+                } ):
+      result = ycm.DebugInfo( 'ycmd-file-mru' )
+    assert_that( result, contains_string( 'Clangd' ) )
+    assert_that( result, contains_string( '/proj/a/f.cc' ) )
+    assert_that( result, contains_string( '/proj/a/g.cc' ) )
 
   def test_DebugInfo_UnknownSubcommand( self ):
     ycm = self._MakeYcm( IndividualServerPolicy() )

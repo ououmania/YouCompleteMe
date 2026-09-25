@@ -193,13 +193,11 @@ Contents ~
    60. The |g:ycm_gopls_binary_path| option
    61. The |g:ycm_gopls_args| option
    62. The |g:ycm_reuse_project_ycmd_server| option
-   63. The |g:ycm_reuse_max_open_files| option
-   64. The |g:ycm_reuse_max_memory_mb| option
-   65. The |g:ycm_rls_binary_path| and 'g:ycm_rustc_binary_path' options
-   66. The |g:ycm_rust_toolchain_root| option
-   67. The |g:ycm_tsserver_binary_path| option
-   68. The |g:ycm_roslyn_binary_path| option
-   69. The |g:ycm_update_diagnostics_in_insert_mode| option
+   63. The |g:ycm_rls_binary_path| and 'g:ycm_rustc_binary_path' options
+   64. The |g:ycm_rust_toolchain_root| option
+   65. The |g:ycm_tsserver_binary_path| option
+   66. The |g:ycm_roslyn_binary_path| option
+   67. The |g:ycm_update_diagnostics_in_insert_mode| option
   12. FAQ                                                   |youcompleteme-faq|
   13. Contributor Code of Conduct   |youcompleteme-contributor-code-of-conduct|
   14. Contact                                           |youcompleteme-contact|
@@ -2239,6 +2237,30 @@ This will print out various debug information for the current file. Useful to
 see what compile commands will be used for the file if you're using the
 semantic completion engine.
 
+':YcmDebugInfo' optionally takes one of the following subcommands:
+
+  :YcmDebugInfo projects ~
+    Lists the per-project ycmd servers tracked by the client, including the
+    number of open files per project. Only meaningful when
+    |g:ycm_reuse_project_ycmd_server| is enabled.
+
+  :YcmDebugInfo ycm-file-mru ~
+    Shows the client-side, per-project file MRU: which files belong to which
+    project, most-recently-used first. This is the client's view and is used
+    to decide which project server to evict first when the project server
+    limit is reached.
+
+  :YcmDebugInfo ycmd-file-mru ~
+    Shows the server-side file MRU: the files currently open in the ycmd
+    server, most-recently-used first. This is the ycmd server's view and is
+    used to evict files when the server exceeds its file count or memory
+    limit. Because it reflects the shared server state, it may include files
+    opened by other Vim instances connected to the same server.
+
+The two file MRU commands show different layers: 'ycm-file-mru' is the
+client's per-project view (project routing), while 'ycmd-file-mru' is the
+server's per-file view (memory eviction).
+
 -------------------------------------------------------------------------------
 The *:YcmToggleLogs* command
 
@@ -4086,28 +4108,19 @@ Default: '0'
   let g:ycm_reuse_project_ycmd_server = 1
 <
 ------------------------------------------------------------------------------
-The *g:ycm_reuse_max_open_files* option
+File LRU and memory limit (moved to ycmd)
 
-When |g:ycm_reuse_project_ycmd_server| is enabled, YCM tracks the recently
-visited files of the reused server and evicts the least recently used ones
-once this many files have been opened.
+Per-file LRU eviction and the memory limit are now enforced by the ycmd
+server rather than by YCM. The relevant ycmd options are 'lsp_max_open_files'
+(default '20') and 'lsp_max_memory_mb' (default '0' to disable). Clangd can
+be tuned separately with 'clangd_max_open_files' / 'clangd_max_memory_mb'
+(empty means "inherit the 'lsp_*' value"). They are ycmd options, settable
+through a '.ycm_extra_conf.py' 'Settings' function or in ycmd's
+'default_settings.json'.
 
-Default: '20'
->
-  let g:ycm_reuse_max_open_files = 20
-<
-------------------------------------------------------------------------------
-The *g:ycm_reuse_max_memory_mb* option
-
-When |g:ycm_reuse_project_ycmd_server| is enabled, YCM evicts the least
-recently used open files from the reused server when its child process (for
-example clangd) exceeds this memory limit, in MB. Set to '0' to disable the
-memory-based eviction.
-
-Default: '0'
->
-  let g:ycm_reuse_max_memory_mb = 0
-<
+YCM keeps only a per-project count of open files, used to pick which project
+server to evict first. See |:YcmDebugInfo| 'ycm-file-mru' and 'ycmd-file-mru'
+for the client and server views respectively.
 ------------------------------------------------------------------------------
 The *g:ycm_rls_binary_path* and 'g:ycm_rustc_binary_path' options
 

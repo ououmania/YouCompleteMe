@@ -23,7 +23,8 @@
 - 不写魔鬼数字；`reuse_project_ycmd_server` / `reuse_max_project_servers` 等从 `_user_options` 读取。
 - 每行 ≤ 80 字符（flake8），缩进 2 空格。提交信息不加 `Co-Authored-By:`。
 - 已确认决策：OnVimLeave **全不关**；`:YcmRestartServer` **只重启当前 buffer 的**；
-  server 上限 `reuse_max_project_servers` 默认 **5**，超限**软淘汰**（不 shutdown）；
+  server 上限 `reuse_max_project_servers` 默认 **5**，超限**软淘汰**（不 shutdown），
+  淘汰策略为**优先淘汰当前 buffer 中打开文件最少的项目**（这种一般是临时打开，保留常用大项目）；
   idle_suicide 分级：**首个项目 1800s / 其余 300s**（300 硬编码，不做选项）；per-project LRU。
 - 测试：`python run_tests.py --skip-build <unittest 目标>`；lint：`python -m flake8 <files>`。
 
@@ -1006,28 +1007,34 @@ printf 'int main(){}\n' > /tmp/ycm-multi/b/src/main.cpp
    ycmd 侧改动在 submodule（`clangd_completer.py` + `default_settings.json`）。解决"clangd 用错
    compile_commands.json"与"Project Directory 显示 cwd"两个问题。新增客户端单测
    `test_ReadProjectMarker` / `test_GetCompilationDatabaseDir` 等 5 个。
+7. **文件级 LRU / 内存上限移到 ycmd 侧**（设计修正，2026-09-24）：
+   - **问题**：`_EvictOpenFiles` + `reuse_max_open_files` / `reuse_max_memory_mb` 是客户端（per-vim）
+     的 LRU/RSS 控制，管不住共享 ycmd 的总量。
+   - **ycmd 侧（submodule）**：
+     - `default_settings.json` 新增 `lsp_max_open_files`(20) / `lsp_max_memory_mb`(0)，及
+       `clangd_max_open_files` / `clangd_max_memory_mb`（空串 = 继承 lsp 值，供 clangd 单独调）。
+     - `LanguageServerCompleter.GetMaxOpenFiles()` / `GetMaxMemoryMb()` 读 `lsp_*`；
+       `ClangdCompleter` 覆盖为 `clangd_*` 非空则用、否则回退基类。
+     - `ServerFileState` 加 `last_used`；`ServerReset` 加 `_file_access_counter`；
+       `_RefreshFileContentsUnderLock` 每次 bump `last_used`；`_ServerProcessRssMb()` 读
+       `/proc/<pid>/statm`；`_EvictFilesUnderLock()` 在 `_UpdateServerWithFileContents` 末尾按
+       `max_open_files` / `max_memory` 逐出 LRU 最久未用的文件（`_PurgeFileFromServer` → `didClose`）。
+     - 单测：`language_server_completer_test` 的 GetMaxFiles/Evict 系列 + `clangd/utilities_test`
+       的 clangd override 系列。
+   - **客户端（YCM）**：删 `_EvictOpenFiles` / `_GetChildProcessRssMb` /
+     `reuse_max_open_files` / `reuse_max_memory_mb` 选项与 `g:ycm_reuse_max_*` 声明、`file-lru` 子命令。
+     **保留** per-project `_open_files_lru` 计数，仅供 `_EvictOneProject` 淘汰与 `YcmDebugInfo projects`
+     的 `files=N` 展示；文件级**驱逐动作**已完全移到 ycmd（客户端不再发 `BufferUnload`）。
+     `reuse_max_project_servers`（项目级上限）保留。
+
+     **为什么两侧各留一层 LRU（不重叠）：**
+     - **ycmd 的文件级 LRU** 管「单个服务器内部该 `didClose` 哪些文件」。clangd 的 AST + 动态索引内存、
+       以及 `didOpen` 文件状态都在 ycmd 服务器侧，且一个 ycmd 会被多个 vim 客户端共享——只有服务器侧
+       看得到**文件总量**（客户端是 per-vim 的，管不住 N×20）。所以内存上限只能放 ycmd。
+     - **YCM 的项目级计数** 管「该淘汰哪个项目（=哪个 ycmd server）」。**项目**是客户端路由出来的概念
+       （`project_root` → server 连接），ycmd 服务器**不知道项目**（它只看到一堆文件）；「哪个项目的
+       buffer 最少、最像临时打开」这个归属信息只有客户端有。所以项目级淘汰必须在客户端做。
+     - 一句话：**文件归 ycmd（它拥有文件状态与内存）、项目归 YCM（它拥有项目路由与 buffer 归属）**。
+       两者不重叠：ycmd 不感知项目，YCM 也不再直接发 `didClose`。
 
 ---
-
-## 后续改动（待实现）
-
-7. **ycmd 侧服务器级内存上限**（设计修正，2026-09-24 提出，未实现）：
-   - **问题**：现有 `_EvictOpenFiles` + `reuse_max_open_files` / `reuse_max_memory_mb` 是**客户端
-     （per-vim）的 LRU/RSS 控制**。而内存（clangd 的 AST + 动态索引）在**共享的 ycmd 服务器侧**：
-     多客户端连同一 ycmd、各开 20 个不同文件时，服务器就是 N×20，客户端谁都管不住总量。
-     clangd 自己只有隐式驱逐（`rebuilding evicted AST`），无显式上限。
-   - **方案**：把内存上限移到 **ycmd 侧**——ycmd 监控 clangd 子进程 RSS，维护一份**跨客户端的全局 LRU**
-     （`_server_file_state` 里哪些文件 `didOpen` 着、最近谁用过），RSS 超上限就按 LRU `didClose` 最久未用的文件。
-   - **ycmd 已具备**：
-     - `_server_file_state`（`lsp.ServerFileStateStore`，`language_server_completer.py:1080`）——
-       服务器侧打开文件表，天然跨客户端。
-     - `_CloseFile`（`language_server_completer.py:2360`，`DidCloseTextDocument` + 移除 state）——
-       `didClose` 机制。
-   - **待加**：
-     - clangd 子进程 RSS 监控（周期性或触发式）。
-     - `_server_file_state` 的 LRU 排序（记录每个文件的最后使用时间）。
-     - 内存触发驱逐：RSS 超上限 → 按 LRU `didClose`，直到 RSS 降下来。
-   - **配置**：内存上限选项搬到 ycmd 侧（`reuse_max_memory_mb` 改为服务器级，或新增 `ycmd_max_memory_mb`）。
-   - **改动范围**：主要在 `third_party/ycmd`（`language_server_completer.py` + `default_settings.json`）；
-     客户端 `_EvictOpenFiles` / `reuse_max_open_files` 是否保留待定（可作为 per-client 提示保留，或移除）。
-   - **待评估**：RSS 采样间隔、驱逐阈值与回滞（避免抖动）、与 clangd 自身隐式驱逐的配合。

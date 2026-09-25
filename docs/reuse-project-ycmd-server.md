@@ -27,8 +27,11 @@ clangd 启动慢，且跨 vim 会话每次重启都会重复索引。对于有 c
 | 选项 | 默认 | 含义 |
 |---|---|---|
 | `g:ycm_reuse_project_ycmd_server` | `0` | 总开关 |
-| `g:ycm_reuse_max_open_files` | `20` | 保留解析缓存的文件数上限（LRU 驱逐） |
-| `g:ycm_reuse_max_memory_mb` | `0` | clangd 子进程 RSS 上限，超限触发 LRU 驱逐（0 = 不限制） |
+
+> 文件级 LRU 驱逐与内存上限已移到 ycmd 侧（`lsp_max_open_files` /
+> `lsp_max_memory_mb`，clangd 可用 `clangd_max_open_files` /
+> `clangd_max_memory_mb` 单独覆盖）。vim 侧只保留 per-project 打开文件计数，
+> 用于项目级淘汰。见 [`reuse-multi-server-design.md`](reuse-multi-server-design.md)。
 
 ### 判定是否可复用
 

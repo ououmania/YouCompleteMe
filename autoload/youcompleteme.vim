@@ -1595,7 +1595,7 @@ endfunction
 
 
 function! youcompleteme#DebugInfoComplete( arglead, cmdline, cursorpos )
-  return join( [ 'projects', 'file-lru' ], "\n" )
+  return join( [ 'projects', 'ycm-file-mru', 'ycmd-file-mru' ], "\n" )
 endfunction
 
 
