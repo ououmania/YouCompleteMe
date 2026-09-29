@@ -121,6 +121,14 @@ class ConnectionInfo:
 YCM_PROJECT_MARKER = '.ycm_project.json'
 
 
+# Defaults for the file-MRU display filters used by :YcmDebugInfo ycm-file-mru
+# and ycmd-file-mru. Each can be overridden with the corresponding g:ycm_*
+# option: g:ycm_file_mru_extensions, g:ycm_file_mru_exclude and
+# g:ycm_file_mru_project_only.
+DEFAULT_FILE_MRU_EXTENSIONS = [ '.cpp', '.cc' ]
+DEFAULT_FILE_MRU_EXCLUDES = [ r'\.pb\.(h|cc|cpp)$' ]
+
+
 def _FindProjectRoot( filepath = None ):
   directory = ( os.path.dirname( os.path.realpath( filepath ) )
                 if filepath else os.path.realpath( os.getcwd() ) )
@@ -300,10 +308,12 @@ class ReusableServerPolicy( ServerPolicy ):
     vimsupport.PostVimMessage( 'Restarting ycmd server...' )
     SendShutdownRequest()
     if self._active_project_root:
-      _RemoveConnectionFile( self._active_project_root )
-      self._ycmd_servers.pop( self._active_project_root, None )
-      self._open_files_lru.pop( self._active_project_root, None )
-      self._EnsureProjectServer( ycm, self._active_project_root )
+      project_root = self._active_project_root
+      self._active_project_root = None
+      _RemoveConnectionFile( project_root )
+      self._ycmd_servers.pop( project_root, None )
+      self._open_files_lru.pop( project_root, None )
+      self._EnsureProjectServer( ycm, project_root )
     else:
       ycm._reusing_server = False
       ycm._SetUpServer()
@@ -1228,9 +1238,14 @@ class YouCompleteMe:
       return 'No files tracked on the YCM side\n'
     lines = []
     for project_root, lru in policy._open_files_lru.items():
-      lines.append( f'{ project_root } ( { len( lru ) } files, MRU first ):' )
-      for filepath in reversed( lru ):
+      files = self._FilterFileMruFiles( reversed( lru ), project_root )
+      if not files:
+        continue
+      lines.append( f'{ project_root } ( { len( files ) } files, MRU first ):' )
+      for filepath in files:
         lines.append( f'  - { filepath }' )
+    if not lines:
+      return 'No files tracked on the YCM side\n'
     return '\n'.join( lines ) + '\n'
 
 
@@ -1240,10 +1255,15 @@ class YouCompleteMe:
     response = SendDebugInfoRequest( extra_data )
     if not response or not response.get( 'completer' ):
       return 'No debug info from ycmd server\n'
+    policy = self._server_policy
+    project_root = getattr( policy, '_active_project_root', None )
     lines = []
     for server in response[ 'completer' ].get( 'servers', [] ):
       files = self._OpenFilesFromServer( server )
       if files is None:
+        continue
+      files = self._FilterFileMruFiles( files, project_root )
+      if not files:
         continue
       name = server[ 'name' ]
       lines.append( f'{ name } ( { len( files ) } files, MRU first ):' )
@@ -1252,6 +1272,40 @@ class YouCompleteMe:
     if not lines:
       return 'No open-file state reported by ycmd\n'
     return '\n'.join( lines ) + '\n'
+
+
+  def _FilterFileMruFiles( self, files, project_root = None ):
+    """Filters a list of filepaths for the file-MRU display. Returns a new list
+    keeping only files that (a) live under |project_root| when project-only
+    filtering is enabled, (b) have one of the configured source extensions and
+    (c) don't match any of the configured exclude patterns. See
+    DEFAULT_FILE_MRU_EXTENSIONS / DEFAULT_FILE_MRU_EXCLUDES for the
+    defaults and g:ycm_file_mru_* for the matching options."""
+    files = list( files )
+    if not files:
+      return []
+
+    extensions = self._user_options.get( 'file_mru_extensions',
+                                         DEFAULT_FILE_MRU_EXTENSIONS )
+    exclude_patterns = self._user_options.get( 'file_mru_exclude',
+                                               DEFAULT_FILE_MRU_EXCLUDES )
+    project_only = self._user_options.get( 'file_mru_project_only', True )
+
+    compiled_excludes = [ re.compile( pattern )
+                          for pattern in exclude_patterns ]
+
+    def _KeepFile( filepath ):
+      in_project = ( not project_only or not project_root
+                     or filepath.startswith( project_root ) )
+      if not in_project:
+        return False
+      extension = os.path.splitext( filepath )[ 1 ].lower()
+      if extensions and extension not in extensions:
+        return False
+      return not any( pattern.search( filepath )
+                      for pattern in compiled_excludes )
+
+    return [ filepath for filepath in files if _KeepFile( filepath ) ]
 
 
   @staticmethod

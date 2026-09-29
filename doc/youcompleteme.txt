@@ -4108,6 +4108,42 @@ Default: '0'
   let g:ycm_reuse_project_ycmd_server = 1
 <
 ------------------------------------------------------------------------------
+The *g:ycm_file_mru_extensions* option
+
+Whitelist of file extensions shown by the |:YcmDebugInfo| 'ycm-file-mru' and
+'ycmd-file-mru' subcommands. Files with any other extension (for example '.h'
+headers, or files whose name carries a '#have'-style suffix) are hidden.
+
+Default: '['.cpp', '.cc']'
+>
+  let g:ycm_file_mru_extensions = [ '.cpp', '.cc' ]
+<
+
+The *g:ycm_file_mru_exclude* option
+
+List of regular expressions matched against each filepath; files that match are
+hidden from the file-MRU display. This is meant for generated files (for
+example protobuf '*.pb.h' / '*.pb.cc') that would otherwise pass the extension
+whitelist.
+
+Default: '['\.pb\.(h|cc|cpp)$']'
+>
+  let g:ycm_file_mru_exclude = [ '\.pb\.(h|cc|cpp)$' ]
+<
+
+The *g:ycm_file_mru_project_only* option
+
+When enabled (the default), the 'ycmd-file-mru' display only shows files under
+the active project root, hiding files from unrelated directories (for example
+backup directories) that the server happens to have open. The 'ycm-file-mru'
+display is already grouped by project, so this option has no further effect
+there.
+
+Default: '1'
+>
+  let g:ycm_file_mru_project_only = 1
+<
+------------------------------------------------------------------------------
 File LRU and memory limit (moved to ycmd)
 
 Per-file LRU eviction and the memory limit are now enforced by the ycmd

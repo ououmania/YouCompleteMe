@@ -1596,6 +1596,19 @@ class MultiServerTest( TestCase ):
       wait.assert_called_once_with( ycm )
       assert_that( ycm._server_is_ready_with_cache, equal_to( False ) )
 
+  def test_RestartServer_ActuallyRestartsWhenProjectActive( self ):
+    ycm = self._MakeYcm()
+    policy = ReusableServerPolicy()
+    policy._active_project_root = '/proj/a'
+    conn = ConnectionInfo( port = 9, hmac_secret = b'z', pid = 99 )
+    with patch( 'ycm.youcompleteme.SendShutdownRequest' ), \
+         patch( 'ycm.youcompleteme._RemoveConnectionFile' ), \
+         patch( 'ycm.youcompleteme.vimsupport.PostVimMessage' ), \
+         patch.object( policy, '_EnsureProjectServer' ) as ensure:
+      policy.RestartServer( ycm )
+      ensure.assert_called_once_with( ycm, '/proj/a' )
+      assert_that( policy._active_project_root, equal_to( None ) )
+
 
 class DebugInfoSubcommandTest( TestCase ):
   def _MakeYcm( self, policy ):
@@ -1632,6 +1645,17 @@ class DebugInfoSubcommandTest( TestCase ):
     assert_that( result, contains_string( '/proj/a/f.cc' ) )
     assert_that( result, contains_string( '/proj/a/g.cc' ) )
 
+  def test_DebugInfo_YcmFileMru_FiltersNonSourceFiles( self ):
+    policy = ReusableServerPolicy()
+    policy._open_files_lru = { '/proj/a': [ '/proj/a/f.cpp',
+                                            '/proj/a/f.h',
+                                            '/proj/a/f.pb.cc' ] }
+    ycm = self._MakeYcm( policy )
+    result = ycm.DebugInfo( 'ycm-file-mru' )
+    assert_that( result, contains_string( '/proj/a/f.cpp' ) )
+    assert_that( result, is_not( contains_string( '/proj/a/f.h' ) ) )
+    assert_that( result, is_not( contains_string( '/proj/a/f.pb.cc' ) ) )
+
   def test_DebugInfo_YcmdFileMru( self ):
     policy = ReusableServerPolicy()
     ycm = self._MakeYcm( policy )
@@ -1650,6 +1674,57 @@ class DebugInfoSubcommandTest( TestCase ):
     assert_that( result, contains_string( 'Clangd' ) )
     assert_that( result, contains_string( '/proj/a/f.cc' ) )
     assert_that( result, contains_string( '/proj/a/g.cc' ) )
+
+  def _YcmdFileMruResult( self, policy, open_files ):
+    ycm = self._MakeYcm( policy )
+    with patch.object( ycm, '_AddExtraConfDataIfNeeded' ), \
+         patch( 'ycm.youcompleteme.SendDebugInfoRequest',
+                return_value = {
+                  'completer': {
+                    'servers': [ {
+                      'name': 'Clangd',
+                      'open_files': open_files,
+                    } ],
+                  },
+                } ):
+      return ycm.DebugInfo( 'ycmd-file-mru' )
+
+  def test_DebugInfo_YcmdFileMru_FiltersNonSourceFiles( self ):
+    policy = ReusableServerPolicy()
+    policy._active_project_root = '/proj/a'
+    result = self._YcmdFileMruResult( policy, [
+      '/proj/a/f.cpp',
+      '/proj/a/f.h',
+      '/proj/a/f.pb.h',
+      '/proj/a/f.cpp#have',
+      '/proj/a/g.cc',
+    ] )
+    assert_that( result, contains_string( '/proj/a/f.cpp' ) )
+    assert_that( result, contains_string( '/proj/a/g.cc' ) )
+    assert_that( result, is_not( contains_string( '/proj/a/f.h' ) ) )
+    assert_that( result, is_not( contains_string( '/proj/a/f.pb.h' ) ) )
+    assert_that( result, is_not( contains_string( '/proj/a/f.cpp#have' ) ) )
+
+  def test_DebugInfo_YcmdFileMru_FiltersOutsideProject( self ):
+    policy = ReusableServerPolicy()
+    policy._active_project_root = '/proj/a'
+    result = self._YcmdFileMruResult( policy, [
+      '/proj/a/f.cpp',
+      '/backup/g.cpp',
+    ] )
+    assert_that( result, contains_string( '/proj/a/f.cpp' ) )
+    assert_that( result, is_not( contains_string( '/backup/g.cpp' ) ) )
+
+  def test_DebugInfo_YcmdFileMru_FiltersProtobuf( self ):
+    policy = ReusableServerPolicy()
+    result = self._YcmdFileMruResult( policy, [
+      '/proj/a/f.cpp',
+      '/proj/a/f.pb.cc',
+      '/proj/a/f.pb.h',
+    ] )
+    assert_that( result, contains_string( '/proj/a/f.cpp' ) )
+    assert_that( result, is_not( contains_string( '/proj/a/f.pb.cc' ) ) )
+    assert_that( result, is_not( contains_string( '/proj/a/f.pb.h' ) ) )
 
   def test_DebugInfo_UnknownSubcommand( self ):
     ycm = self._MakeYcm( IndividualServerPolicy() )
