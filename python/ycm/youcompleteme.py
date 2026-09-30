@@ -464,6 +464,7 @@ class YouCompleteMe:
     self._filetypes_with_keywords_loaded = set()
     self._server_is_ready_with_cache = False
     self._message_poll_requests = {}
+    self._server_alive_cache = ( True, 0.0, 0 )  # (last_result, timestamp, fail_count)
 
     self._latest_completion_request = None
     self._latest_signature_help_request = None
@@ -604,10 +605,23 @@ class YouCompleteMe:
     self._logger.setLevel( numeric_level )
 
 
+  _ALIVE_CHECK_INTERVAL = 2.0
+  _ALIVE_FAIL_THRESHOLD = 3
+
   def IsServerAlive( self ):
     if self._reusing_server:
-      return _CheckServerHealthy( BaseRequest.server_location,
-                                  BaseRequest.hmac_secret )
+      now = time.time()
+      last_result, cached_at, fail_count = self._server_alive_cache
+      if last_result and now - cached_at < self._ALIVE_CHECK_INTERVAL:
+        return True
+      alive = _CheckServerHealthy( BaseRequest.server_location,
+                                   BaseRequest.hmac_secret )
+      if alive:
+        self._server_alive_cache = ( True, now, 0 )
+        return True
+      fail_count += 1
+      self._server_alive_cache = ( False, now, fail_count )
+      return fail_count >= self._ALIVE_FAIL_THRESHOLD
     # When the process hasn't finished yet, poll() returns None.
     return bool( self._server_popen ) and self._server_popen.poll() is None
 

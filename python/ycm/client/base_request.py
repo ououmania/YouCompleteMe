@@ -163,13 +163,18 @@ class BaseRequest:
         headers = BaseRequest._ExtraHeaders( method,
                                              request_uri,
                                              sent_data )
-        _logger.debug( 'POST %s\n%s\n%s', request_uri, headers, sent_data )
+        if _logger.isEnabledFor( logging.DEBUG ):
+          _logger.debug( 'POST %s\n%s\n%s',
+                         request_uri,
+                         headers,
+                         _SanitizeLogData( data ) )
       else:
         headers = BaseRequest._ExtraHeaders( method, request_uri )
         if payload:
           request_uri += ToBytes( f'?{ urlencode( payload ) }' )
 
-        _logger.debug( 'GET %s (%s)\n%s', request_uri, payload, headers )
+        if vim.vars.get( 'ycm_verbose_log', False ) or not _IsNoiseEndpoint( handler ):
+          _logger.debug( 'GET %s (%s)\n%s', request_uri, payload, headers )
       return urlopen(
         Request(
           ToUnicode( request_uri ),
@@ -314,6 +319,24 @@ def _ToUtf8Json( data ):
   return ToBytes( json.dumps( data ) if data else None )
 
 
+def _IsNoiseEndpoint( handler ):
+  return handler in ( 'healthy', 'ready' )
+
+
+def _SanitizeLogData( data ):
+  if vim.vars.get( 'ycm_verbose_log', False ):
+    return data
+  if not data or 'file_data' not in data:
+    return data
+  sanitized = dict( data )
+  sanitized[ 'file_data' ] = {
+    path: { 'contents': f'<{len(info.get("contents",""))} chars omitted>',
+            **{ k: v for k, v in info.items() if k != 'contents' } }
+    for path, info in data[ 'file_data' ].items()
+  }
+  return sanitized
+
+
 def _ValidateResponseObject( response, response_text ):
   if not response_text:
     return
@@ -328,7 +351,12 @@ def _BuildUri( handler ):
 
 
 def MakeServerException( data ):
-  _logger.debug( 'Server exception: %s', data )
+  if vim.vars.get( 'ycm_verbose_log', False ):
+    _logger.debug( 'Server exception: %s', data )
+  else:
+    _logger.debug( 'Server exception: %s: %s',
+                   data[ 'exception' ][ 'TYPE' ],
+                   data[ 'message' ] )
   if data[ 'exception' ][ 'TYPE' ] == UnknownExtraConf.__name__:
     return UnknownExtraConf( data[ 'exception' ][ 'extra_conf_file' ] )
 
