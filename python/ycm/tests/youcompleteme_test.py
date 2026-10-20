@@ -343,6 +343,23 @@ class YouCompleteMeTest( TestCase ):
 
   @YouCompleteMeInstance()
   @patch( 'ycm.vimsupport.PostVimMessage', new_callable = ExtendedMock )
+  def test_YouCompleteMe_NotifyUserIfServerCrashed_PythonTooOld(
+      self, ycm, post_vim_message ):
+    ycm._server_python_interpreter = '/usr/bin/python3'
+    message = (
+      "Unable to start the ycmd server: the Python interpreter "
+      "'/usr/bin/python3' is too old (ycmd requires Python 3.12+). Set "
+      "'g:ycm_server_python_interpreter' to a Python 3.12+ executable, or "
+      "recompile YCM with a newer Python (e.g. 'python3.12 install.py'), then "
+      "restart with ':YcmRestartServer'." )
+    RunNotifyUserIfServerCrashed( ycm, post_vim_message, {
+      'return_code': 8,
+      'expected_message': equal_to( message )
+    } )
+
+
+  @YouCompleteMeInstance()
+  @patch( 'ycm.vimsupport.PostVimMessage', new_callable = ExtendedMock )
   def test_YouCompleteMe_NotifyUserIfServerCrashed_UnexpectedExitCode(
       self, ycm, post_vim_message ):
     message = (

@@ -93,9 +93,10 @@ CORE_OUTDATED_MESSAGE = (
   'YCM core library too old; PLEASE RECOMPILE by running the install.py '
   'script. See the documentation for more details.' )
 PYTHON_TOO_OLD_MESSAGE = (
-  'Your python is too old to run YCM server. '
-  'Please see troubleshooting guide on YCM GitHub wiki.'
-)
+  "Unable to start the ycmd server: the Python interpreter '{python}' is too "
+  "old (ycmd requires Python 3.12+). Set 'g:ycm_server_python_interpreter' to "
+  "a Python 3.12+ executable, or recompile YCM with a newer Python (e.g. "
+  "'python3.12 install.py'), then restart with ':YcmRestartServer'." )
 SERVER_IDLE_SUICIDE_SECONDS = 1800  # 30 minutes
 SECONDARY_IDLE_SUICIDE_SECONDS = 300  # 5 minutes, non-first projects
 CLIENT_LOGFILE_FORMAT = 'ycm_'
@@ -397,6 +398,7 @@ class YouCompleteMe:
     self._server_stdout = None
     self._server_stderr = None
     self._server_popen = None
+    self._server_python_interpreter = None
     self._reusing_server = False
     self._server_policy = None
     self._default_options = default_options
@@ -523,6 +525,7 @@ class YouCompleteMe:
       vimsupport.PostVimMessage( error_message )
       return None
 
+    self._server_python_interpreter = python_interpreter
     args = [ python_interpreter,
              paths.PathToServerScript(),
              f'--port={ server_port }',
@@ -662,7 +665,8 @@ class YouCompleteMe:
       error_message = CORE_OUTDATED_MESSAGE
     elif return_code == 8:
       # TODO: here we could retry but discard g:ycm_server_python_interpreter
-      error_message = PYTHON_TOO_OLD_MESSAGE
+      error_message = PYTHON_TOO_OLD_MESSAGE.format(
+        python = self._server_python_interpreter )
     else:
       error_message = EXIT_CODE_UNEXPECTED_MESSAGE.format( code = return_code,
                                                            logfile = logfile )
