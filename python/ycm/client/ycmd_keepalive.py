@@ -24,7 +24,10 @@ from ycm.client.base_request import BaseRequest
 # life of the client. By default, ycmd shuts down if it doesn't see a request in
 # a while.
 class YcmdKeepalive:
-  def __init__( self, ping_interval_seconds = 60 * 10 ):
+  # Must stay well below the shortest --idle_suicide_seconds ycmd may be
+  # started with (300 seconds for non-first projects), otherwise the server
+  # shuts itself down while Vim is still alive and idle.
+  def __init__( self, ping_interval_seconds = 60 ):
     self._keepalive_thread = Thread( target = self._ThreadMain )
     self._keepalive_thread.daemon = True
     self._ping_interval_seconds = ping_interval_seconds

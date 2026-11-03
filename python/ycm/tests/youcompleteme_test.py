@@ -1584,6 +1584,25 @@ class MultiServerTest( TestCase ):
     assert_that( first, equal_to( SERVER_IDLE_SUICIDE_SECONDS ) )
     assert_that( second, equal_to( SECONDARY_IDLE_SUICIDE_SECONDS ) )
 
+  def test_EnsureProjectServer_RestartKeepsLongIdleSuicide( self ):
+    ycm = self._MakeYcm()
+    policy = ReusableServerPolicy()
+    conn = ConnectionInfo( port = 3, hmac_secret = b'x', pid = 3 )
+    with patch( 'ycm.youcompleteme._ReadConnectionFile',
+                return_value = None ), \
+         patch.object( ReusableServerPolicy, '_WaitUntilServerReady' ), \
+         patch.object( ycm, '_StartServer', return_value = conn ) as start:
+      policy._EnsureProjectServer( ycm, '/proj/a' )
+      # The server for /proj/a died, so the next buffer visit starts a new one
+      # for the same project. It must not be downgraded to a secondary server.
+      policy._ycmd_servers.pop( '/proj/a' )
+      policy._active_project_root = None
+      policy._EnsureProjectServer( ycm, '/proj/a' )
+    assert_that( start.call_args_list[ 0 ][ 0 ][ 1 ],
+                 equal_to( SERVER_IDLE_SUICIDE_SECONDS ) )
+    assert_that( start.call_args_list[ 1 ][ 0 ][ 1 ],
+                 equal_to( SERVER_IDLE_SUICIDE_SECONDS ) )
+
   def test_OnVimLeave_ShutsDownFallbackWhenNoProject( self ):
     ycm = self._MakeYcm()
     policy = ReusableServerPolicy()  # _active_project_root is None

@@ -99,6 +99,10 @@ PYTHON_TOO_OLD_MESSAGE = (
   "'python3.12 install.py'), then restart with ':YcmRestartServer'." )
 SERVER_IDLE_SUICIDE_SECONDS = 1800  # 30 minutes
 SECONDARY_IDLE_SUICIDE_SECONDS = 300  # 5 minutes, non-first projects
+# Must stay well below the shortest idle timeout above, otherwise ycmd kills
+# itself (and its subservers) while Vim is still alive and idle.
+KEEPALIVE_PING_INTERVAL_SECONDS = min( SERVER_IDLE_SUICIDE_SECONDS,
+                                       SECONDARY_IDLE_SUICIDE_SECONDS ) // 4
 CLIENT_LOGFILE_FORMAT = 'ycm_'
 SERVER_LOGFILE_FORMAT = 'ycmd_{port}_{std}_'
 
@@ -345,8 +349,12 @@ class ReusableServerPolicy( ServerPolicy ):
     if project_root not in self._ycmd_servers:
       if len( self._ycmd_servers ) >= self._MaxServers( ycm ):
         self._EvictOneProject( ycm )
+    # Only _other_ projects turn this one into a secondary server. A server
+    # restarted for the same project must keep the long timeout, otherwise it
+    # is downgraded to the short one forever after the first restart.
+    other_projects = self._seen_projects - { project_root }
     idle_suicide_seconds = (
-        SERVER_IDLE_SUICIDE_SECONDS if not self._seen_projects
+        SERVER_IDLE_SUICIDE_SECONDS if not other_projects
         else SECONDARY_IDLE_SUICIDE_SECONDS )
     conn = ycm._StartServer( project_root, idle_suicide_seconds )
     if conn is not None:
@@ -402,7 +410,7 @@ class YouCompleteMe:
     self._reusing_server = False
     self._server_policy = None
     self._default_options = default_options
-    self._ycmd_keepalive = YcmdKeepalive()
+    self._ycmd_keepalive = YcmdKeepalive( KEEPALIVE_PING_INTERVAL_SECONDS )
     self._SetUpLogging()
     self._SetUpServer()
     self._ycmd_keepalive.Start()
