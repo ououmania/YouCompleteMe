@@ -53,6 +53,7 @@ from ycm.client.debug_info_request import ( SendDebugInfoRequest,
 from ycm.client.omni_completion_request import OmniCompletionRequest
 from ycm.client.event_notification import SendEventNotificationAsync
 from ycm.client.shutdown_request import SendShutdownRequest
+from ycm.client.detach_request import SendDetachRequest
 from ycm.client.messages_request import MessagesPoll
 
 
@@ -253,7 +254,7 @@ class ServerPolicy:
 
 class IndividualServerPolicy( ServerPolicy ):
   def OnServerSetup( self, ycm ):
-    ycm._StartServer( None )
+    ycm._StartServer( None, ycm._IdleSuicideSeconds() )
 
   def OnVimLeave( self, ycm ):
     ycm._ShutdownServer()
@@ -282,7 +283,7 @@ class ReusableServerPolicy( ServerPolicy ):
     if project_root:
       self._EnsureProjectServer( ycm, project_root )
     else:
-      ycm._StartServer( None )
+      ycm._StartServer( None, ycm._IdleSuicideSeconds() )
 
   def OnBufferVisit( self, ycm ):
     filepath = vimsupport.GetCurrentBufferFilepath()
@@ -308,6 +309,8 @@ class ReusableServerPolicy( ServerPolicy ):
   def OnVimLeave( self, ycm ):
     if self._active_project_root is None:
       ycm._ShutdownServer()
+    else:
+      SendDetachRequest()
 
   def RestartServer( self, ycm ):
     vimsupport.PostVimMessage( 'Restarting ycmd server...' )
@@ -354,8 +357,8 @@ class ReusableServerPolicy( ServerPolicy ):
     # is downgraded to the short one forever after the first restart.
     other_projects = self._seen_projects - { project_root }
     idle_suicide_seconds = (
-        SERVER_IDLE_SUICIDE_SECONDS if not other_projects
-        else SECONDARY_IDLE_SUICIDE_SECONDS )
+        ycm._IdleSuicideSeconds() if not other_projects
+        else ycm._SecondaryIdleSuicideSeconds() )
     conn = ycm._StartServer( project_root, idle_suicide_seconds )
     if conn is not None:
       self._ycmd_servers[ project_root ] = conn
@@ -497,8 +500,19 @@ class YouCompleteMe:
     self._server_policy.OnServerSetup( self )
 
 
-  def _StartServer( self, project_root,
-                    idle_suicide_seconds = SERVER_IDLE_SUICIDE_SECONDS ):
+  def _IdleSuicideSeconds( self ):
+    return self._user_options.get( 'idle_suicide_seconds',
+                                   SERVER_IDLE_SUICIDE_SECONDS )
+
+
+  def _SecondaryIdleSuicideSeconds( self ):
+    return self._user_options.get( 'secondary_idle_suicide_seconds',
+                                   SECONDARY_IDLE_SUICIDE_SECONDS )
+
+
+  def _StartServer( self, project_root, idle_suicide_seconds = None ):
+    if idle_suicide_seconds is None:
+      idle_suicide_seconds = self._IdleSuicideSeconds()
     hmac_secret = os.urandom( HMAC_SECRET_LENGTH )
     options_dict = dict( self._user_options )
     options_dict[ 'hmac_secret' ] = utils.ToUnicode(

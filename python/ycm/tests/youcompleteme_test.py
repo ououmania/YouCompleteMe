@@ -1618,6 +1618,50 @@ class MultiServerTest( TestCase ):
       policy.OnVimLeave( ycm )
       shutdown.assert_not_called()
 
+  def test_OnVimLeave_ReuseSendsDetachOnlyWhenProjectActive( self ):
+    ycm = self._MakeYcm()
+    with patch( 'ycm.youcompleteme.SendDetachRequest',
+                create = True ) as detach, \
+         patch.object( ycm, '_ShutdownServer' ) as shutdown:
+      active = ReusableServerPolicy()
+      active._active_project_root = '/proj/a'
+      active.OnVimLeave( ycm )
+      assert_that( detach.call_count, equal_to( 1 ) )
+      shutdown.assert_not_called()
+
+      detach.reset_mock()
+      fallback = ReusableServerPolicy()
+      fallback.OnVimLeave( ycm )
+      shutdown.assert_called_once()
+      detach.assert_not_called()
+
+  def test_EnsureProjectServer_UsesConfiguredIdleSuicide( self ):
+    ycm = self._MakeYcm()
+    ycm._user_options = { 'reuse_max_project_servers': 5,
+                          'idle_suicide_seconds': 7200,
+                          'secondary_idle_suicide_seconds': 600 }
+    policy = ReusableServerPolicy()
+    conn = ConnectionInfo( port = 3, hmac_secret = b'x', pid = 3 )
+    with patch( 'ycm.youcompleteme._ReadConnectionFile',
+                return_value = None ), \
+         patch.object( ReusableServerPolicy, '_WaitUntilServerReady' ), \
+         patch.object( ycm, '_StartServer', return_value = conn ) as start:
+      policy._EnsureProjectServer( ycm, '/proj/a' )
+      first = start.call_args[ 0 ][ 1 ]
+      policy._EnsureProjectServer( ycm, '/proj/b' )
+      second = start.call_args[ 0 ][ 1 ]
+    assert_that( first, equal_to( 7200 ) )
+    assert_that( second, equal_to( 600 ) )
+
+  def test_OnServerSetup_UsesConfiguredIdleSuicide( self ):
+    ycm = self._MakeYcm()
+    ycm._user_options = { 'reuse_max_project_servers': 5,
+                          'idle_suicide_seconds': 7200 }
+    policy = IndividualServerPolicy()
+    with patch.object( ycm, '_StartServer' ) as start:
+      policy.OnServerSetup( ycm )
+    assert_that( start.call_args[ 0 ], equal_to( ( None, 7200 ) ) )
+
   def test_EnsureProjectServer_WaitsForServerReady( self ):
     ycm = self._MakeYcm()
     ycm._server_is_ready_with_cache = True

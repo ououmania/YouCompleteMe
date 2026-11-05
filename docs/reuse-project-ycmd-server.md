@@ -18,7 +18,6 @@ clangd 启动慢，且跨 vim 会话每次重启都会重复索引。对于有 c
 ## 非目标
 
 - 一个 vim 会话内多项目并存（各自复用各自的 ycmd）——见多连接方案。
-- 改动 ycmd 服务器层（本机制只在 vim 插件层）。
 
 ## 设计
 
@@ -27,6 +26,12 @@ clangd 启动慢，且跨 vim 会话每次重启都会重复索引。对于有 c
 | 选项 | 默认 | 含义 |
 |---|---|---|
 | `g:ycm_reuse_project_ycmd_server` | `0` | 总开关 |
+| `g:ycm_idle_suicide_seconds` | `1800` | ycmd 空闲多久后退出（首个/唯一项目） |
+| `g:ycm_secondary_idle_suicide_seconds` | `300` | 多项目时非首个 ycmd 的空闲超时 |
+
+> 两个 idle 超时必须显著大于 keepalive ping 间隔（当前 75s），否则 vim 还开着
+> ycmd 就可能被 watchdog 杀掉。`idle_suicide` 触发时 ycmd 会连同**所有**子 server
+> （包括 clangd）一起关闭，所以想让 clangd 跨夜常驻需要调大这两个值。
 
 > 文件级 LRU 驱逐与内存上限已移到 ycmd 侧（`lsp_max_open_files` /
 > `lsp_max_memory_mb`，clangd 可用 `clangd_max_open_files` /
@@ -56,8 +61,9 @@ clangd 启动慢，且跨 vim 会话每次重启都会重复索引。对于有 c
    - 读 `connection.json`；读成功且 `_CheckServerHealthy(port, hmac)` 为真 →
      复用（`_reusing_server = True`，`_server_popen = None`），直接 `return`。
    - 否则落到下面的正常启动。
-2. 正常启动新 ycmd（`--idle_suicide_seconds=1800`）；若是复用项目，启动后写
-   `connection.json`。
+2. 正常启动新 ycmd（`--idle_suicide_seconds` 取自 `g:ycm_idle_suicide_seconds`，
+   多项目时非首个用 `g:ycm_secondary_idle_suicide_seconds`）；若是复用项目，启动后
+   写 `connection.json`。
 
 ### 探活
 
@@ -71,10 +77,22 @@ clangd 启动慢，且跨 vim 会话每次重启都会重复索引。对于有 c
 - `ServerPid`：复用时重新读 `connection.json` 取 pid。
 - `NotifyUserIfServerCrashed`：复用时探活失败则提示 `SERVER_SHUTDOWN_MESSAGE`。
 - `RestartServer`：`SendShutdownRequest` → 删 `connection.json` → `_SetUpServer`。
-- `OnVimLeave`：**非复用**才 `_ShutdownServer`；复用的 ycmd 留给 `idle_suicide` 回收。
+- `OnVimLeave`：未建立复用（`_active_project_root is None`）才走 `_ShutdownServer`
+  （发 `/shutdown`，ycmd 连同所有子 server 一起关）；复用激活时发 `POST /detach`，
+  让 ycmd 关掉**不参与复用**的 completer，ycmd 本体留给 `idle_suicide` 回收。
 - 打开文件 LRU（`_open_files_lru` + `_EvictOldOpenFiles`）：超过
   `reuse_max_open_files` 或子进程 RSS 超过 `reuse_max_memory_mb` 时，向 ycmd 发
   `BufferUnload` event_notification，释放其解析缓存。
+
+### 哪些子 server 参与复用
+
+`ShouldKeepAliveOnClientDetach()`（`Completer` 基类默认 `False`）决定某个 completer
+的下游 server 是否跨会话保留。目前只有 `ClangdCompleter` 覆写为 `True`（建索引慢），
+其它 LSP（如 proto 的 buf-lsp）在 `/detach` 时走正常的 LSP `shutdown`+`exit`，并从
+`_filetype_completers` 移除，下次打开文件时重新构造实例、正常启动。
+
+多个 vim 复用同一个 ycmd 时，任一 vim 退出都会发 `/detach`；非复用 completer 被关后，
+仍在线的 vim 下次请求时会自动重新拉起（不做引用计数）。
 
 ### 关键实现点
 
@@ -97,8 +115,10 @@ clangd 启动慢，且跨 vim 会话每次重启都会重复索引。对于有 c
 
 ## 测试
 
-- 目前**无**针对复用机制的单测。后续多连接方案落地前，应先补
-  `_FindCompilationDatabaseDir` / 连接文件读写 / 路由逻辑的单测。
+- 复用与选择性关闭的单测：`python/ycm/tests/youcompleteme_test.py`（`MultiServerTest`）
+  覆盖 `OnVimLeave` 分流、按配置传递 idle 超时；`ycmd/tests/detach_test.py` 覆盖
+  per-completer 接口、`ServerState.ShutdownCompletersOnClientDetach()` 与 `/detach`。
+- 仍缺：`_FindCompilationDatabaseDir` / 连接文件读写的单测。
 
 ## 已知问题 / 限制
 
@@ -106,4 +126,6 @@ clangd 启动慢，且跨 vim 会话每次重启都会重复索引。对于有 c
    database，reuse 判定失败；之后 MRU 打开项目文件时已经晚了。
 2. **多项目并存**：单 ycmd 只能锁定一个 compilation database 目录，混开多个项目时
    只有一个项目能复用。
-3. **内存**：clangd 常驻至多 30 分钟（`idle_suicide`）才退出。
+3. **内存**：clangd 常驻时长由 `g:ycm_idle_suicide_seconds`（默认 1800s）决定，
+   超时后 watchdog 会连 clangd 一起关掉；调大可跨夜复用，但 ycmd 及其子 server
+   也会更久占内存。

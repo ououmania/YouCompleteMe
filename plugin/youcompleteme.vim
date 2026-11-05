@@ -207,6 +207,14 @@ let g:ycm_reuse_project_ycmd_server =
 let g:ycm_reuse_max_project_servers =
       \ get( g:, 'ycm_reuse_max_project_servers', 5 )
 
+" Idle timeouts for the ycmd server, in seconds. These must stay well above
+" the keepalive ping interval, otherwise ycmd may exit while Vim is idle.
+let g:ycm_idle_suicide_seconds =
+      \ get( g:, 'ycm_idle_suicide_seconds', 1800 )
+
+let g:ycm_secondary_idle_suicide_seconds =
+      \ get( g:, 'ycm_secondary_idle_suicide_seconds', 300 )
+
 "
 " List of ycmd options.
 "
